@@ -1,6 +1,6 @@
 {
     "version": "2.0",
     "data": "1. 优化灵动岛动画流畅度\n2. 修复课表切换后状态不同步的问题\n3. 新增随机点名器的名单自动加载\n4. 优化更新流程，改为独立更新器",
-    "download_url": "https://gitee.com/lchxxxx/board/releases/download/v3.1/ClassBoard.zip",
+    "download_url": "https://gitee.com/lchxxxx/board/releases/download/v3.0/ClassDaily%20v3.0.zip",
     "force_update": false
 }
