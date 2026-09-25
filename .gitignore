@@ -1,0 +1,11 @@
+settings/
+plugins/*/data.json
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.spec
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
