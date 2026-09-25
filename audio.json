@@ -1,0 +1,13 @@
+{
+  "id": "audio",
+  "name": "媒体播放",
+  "version": "1.0.0",
+  "format": "cbplugin",
+  "file": "audio.cbplugin",
+  "download_url": "https://github.com/LCHXXXX-1/Class-Daily-Land/releases/download/plugin-v1.0/audio.cbplugin",
+  "sha256": "414a23f4c584a15c7b72f25b57de90458780ecfde44ad71a58f04bb2284a1b79",
+  "entry": "main",
+  "description": "用 Windows SMTC 显示正在播放的媒体（歌名/歌手/暂停），可显示在主岛或副岛，停止后自动隐藏",
+  "author": "LCHXXXX-1",
+  "minAppVersion": "1.0.1"
+}
