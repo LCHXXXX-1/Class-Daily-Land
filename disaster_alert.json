@@ -1,0 +1,12 @@
+{
+  "id": "disaster_alert",
+  "name": "灾害警报",
+  "version": "1.0.0",
+  "format": "cbplugin",
+  "file": "disaster_alert.cbplugin",
+  "download_url": "https://github.com/LCHXXXX-1/Class-Daily-Land/releases/download/plugin-v1.0/disaster_alert.cbplugin",
+  "entry": "main",
+  "description": "灾害警报插件",
+  "author": "LCHXXXX-1",
+  "minAppVersion": "1.0.0"
+}
