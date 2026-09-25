@@ -8,7 +8,7 @@ from utils import set_window_icon
 AGREEMENT_FILE = "agreement.json"
 
 AGREEMENT_TEXT = """
-欢迎使用“ClassBoard”软件（以下简称“本软件”）。
+欢迎使用“Class Daily Land”软件（以下简称“本软件”）。
 
 在使用本软件前，请您仔细阅读以下条款：
 

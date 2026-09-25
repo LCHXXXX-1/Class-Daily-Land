@@ -1,8 +1,8 @@
-# ClassBoard
+# Class Daily Land
 
 > 一个轻量级的班级日常管理工具
 
-ClassBoard 是一个基于 **PySide6** 的 Windows 桌面应用，面向班级日常管理场景。提供值日生轮换、出勤记录、作业展示、课表提醒等功能，并内置模仿 iOS 灵动岛的桌面悬浮组件，可显示下节课倒计时、上课/下课提醒。同时支持插件扩展。
+Class Daily Land 是一个基于 **PySide6** 的 Windows 桌面应用，面向班级日常管理场景。提供值日生轮换、出勤记录、作业展示、课表提醒等功能，并内置模仿 iOS 灵动岛的桌面悬浮组件，可显示下节课倒计时、上课/下课提醒。同时支持插件扩展。
 
 - **当前版本**：v4.0
 - **作者**：LCHXXXX、hexwisp72
@@ -73,16 +73,16 @@ pip install PySide6
 ### 从源码运行
 
 ```bash
-git clone https://gitee.com/lchxxxx/board.git
-cd board
+git clone https://gitee.com/lchxxxx/class-daily-land.git
+cd class-daily-land
 pip install PySide6
-python ClassBoard.py
+python "Class Daily Land.py"
 ```
 
 ### 打包为可执行文件
 
 ```bash
-pyinstaller -F -w -i icon.ico ClassBoard.py
+pyinstaller -F -w -i icon.ico "Class Daily Land.py"
 ```
 
 打包后请确保 `_internal/version.json` 或根目录下的 `version.json` 存在，以便“关于”页面正确显示版本号。
@@ -96,12 +96,12 @@ pyinstaller -F -w -i icon.ico ClassBoard.py
 ## 目录结构
 
 ```
-board/
-├── ClassBoard.py          # 主入口，初始化应用与各组件
+class-daily-land/
+├── Class Daily Land.py    # 主入口，初始化应用与各组件
 ├── controller.py          # 应用协调器，集中处理设置应用与可见性联动
 ├── dynamic_island.py      # 灵动岛窗口与逻辑
 ├── sub_island.py          # 副岛窗口
-├── gui.py                 # 主窗口 ClassBoardApp
+├── gui.py                 # 主窗口
 ├── menu.py                # 值日生、出勤、作业、课表、假期等编辑对话框
 ├── schedule.py            # 课表管理核心
 ├── settings_manager.py    # 设置读写
@@ -257,7 +257,7 @@ def register(api):
 
 - **主程序不处理更新**：所有版本比较、下载、解压均由独立的 Launcher 完成。`launch_updater.py` 只负责以隐藏或可见方式启动 `Launcher.exe`（或回退到 `launcher.py`）。
 - **灵动岛的平台限制**：置顶、全屏检测、Office 前台检测使用 `ctypes` 调用 Win32 API，仅在 Windows 下完整可用；其他平台会跳过相关逻辑。
-- **单实例**：通过 Windows 命名互斥体 `ClassBoard_SingleInstance_Mutex` 实现，避免重复启动。
+- **单实例**：通过 Windows 命名互斥体 `ClassDailyLand_SingleInstance_Mutex` 实现，避免重复启动。
 - **用户协议**：首次启动弹出协议对话框，同意后写入 `agreement.json`。
 - **配置即时保存**：设置对话框中的大部分修改会立即写入 `settings.json` 并应用到各组件。
 - **数据本地化**：值日、作业、课表、设置等全部保存在 `settings/` 目录，不上传服务器。
@@ -282,7 +282,7 @@ A：在“课表管理”对话框中点击“恢复默认课表（清除全部�
 A：请确认程序目录下存在 `Launcher.exe` 或 `launcher.py`。主程序本身不包含下载逻辑。
 
 **Q：为什么只能打开一个程序实例？**  
-A：ClassBoard 使用单实例锁，避免多个实例同时读写配置文件造成冲突。若需重新启动，请先退出已有实例。
+A：Class Daily Land 使用单实例锁，避免多个实例同时读写配置文件造成冲突。若需重新启动，请先退出已有实例。
 
 ---
 
@@ -304,4 +304,4 @@ A：ClassBoard 使用单实例锁，避免多个实例同时读写配置文件�
 
 ---
 
-*ClassBoard 仅用于个人学习与班级管理，请勿用于任何非法或违反道德的活动。*
+*Class Daily Land 仅用于个人学习与班级管理，请勿用于任何非法或违反道德的活动。*

@@ -565,7 +565,8 @@ class SettingsDialog(QDialog):
         from PySide6.QtWidgets import QFileDialog
         import shutil
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择插件文件", "", "ClassBoard 插件 (*.cbplugin);;所有文件 (*)")
+            self, "选择插件文件", "",
+            "Class Daily Land 插件 (*.cdlplugin);;所有文件 (*)")
         if not path:
             return
         plugins_dir = getattr(self.plugin_manager, 'plugins_dir', None) \
@@ -597,7 +598,7 @@ class SettingsDialog(QDialog):
         from about import get_version
         version = get_version()
 
-        title = QLabel("ClassBoard")
+        title = QLabel("Class Daily Land")
         f = QFont("Microsoft YaHei UI")
         f.setPixelSize(26)
         f.setBold(True)

@@ -1,7 +1,9 @@
 import sys
 
 ERROR_ALREADY_EXISTS = 183
-LOCK_NAME = "ClassBoard_SingleInstance_Mutex"
+
+# 与 installer.py 的 APP_MUTEX 保持一致
+LOCK_NAME = "ClassDailyLand_SingleInstance_Mutex"
 
 
 def acquire_single_instance_lock(name=LOCK_NAME):

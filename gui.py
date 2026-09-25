@@ -13,7 +13,7 @@ from utils import set_window_icon
 import menu as menu_mod
 
 
-class ClassBoardApp(QWidget):
+class ClassDailyLandApp(QWidget):
     def __init__(self, config_dir, config_file, schedule_manager, settings,
                  plugin_manager=None, controller=None):
         super().__init__()
@@ -31,7 +31,7 @@ class ClassBoardApp(QWidget):
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         set_window_icon(self)
-        self.setStyleSheet("ClassBoardApp { background-color: white; }")
+        self.setStyleSheet("ClassDailyLandApp { background-color: white; }")
 
         self.duty_manager = StudentOnDuty()
         self.homework_manager = HomeworkManager()

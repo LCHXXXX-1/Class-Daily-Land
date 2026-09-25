@@ -64,7 +64,7 @@ class AppTray(QSystemTrayIcon):
         menu.addAction(act_exit)
 
         self.setContextMenu(menu)
-        self.setToolTip("ClassBoard")
+        self.setToolTip("Class Daily Land")
         self.activated.connect(self._on_activated)
         self.sync_state()
 
