@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "format": "cbplugin",
   "file": "disaster_alert.cbplugin",
-  "download_url": "https://github.com/LCHXXXX-1/Class-Daily-Land/releases/download/plugin-v1.0/disaster_alert.cbpluginaster_alert.cbplugin",
+  "download_url": "https://github.com/LCHXXXX-1/Class-Daily-Land/releases/download/plugin-v1.0/disaster_alert.cbplugin",
   "sha256": "87801eb0e743c5069e2cde791ee06f13252066cb1e02b1fa9f9237fad8198b6c",
   "entry": "main",
   "description": "灾害警报插件",
