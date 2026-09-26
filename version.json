@@ -1,6 +1,4 @@
 {
-    "version": "4.0",
-    "data": "1. 优化灵动岛动画流畅度\n2. 优化更新流程，改为独立更新器",
+    "version": "1.0",
     "download_url": "https://gitee.com/lchxxxx/class-daily-land/releases/download/Version/Class-Daily-Land-4.0.zip",
-    "force_update": false
 }
