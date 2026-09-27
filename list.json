@@ -59,6 +59,21 @@
       "size": 2548,
       "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.gaokao-countdown.cblplugin",
       "uploaded_at": "2026-09-27T08:00:32.521697+00:00"
+    },
+    {
+      "package_name": "class.hexwisp72.weather",
+      "name": "weather",
+      "display_name": "天气",
+      "author_id": "hexwisp72",
+      "author_name": "hexwisp72",
+      "version": "1.0.0",
+      "description": "副岛动画天气：IP 定位 + Open-Meteo，可在设置里配置并预览每种天气动画",
+      "file": "plugins/class.hexwisp72.weather.cblplugin",
+      "hash_file": "plugins/class.hexwisp72.weather.hash.json",
+      "sha256": "318e5ebb448e05b3423ebc87ec4a2d5f846fc6bd57d92cda66d030a8d0e353d8",
+      "size": 7319,
+      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.weather.cblplugin",
+      "uploaded_at": "2026-09-27T08:00:55.676165+00:00"
     }
   ]
 }
