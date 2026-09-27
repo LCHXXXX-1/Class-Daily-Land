@@ -1,0 +1,19 @@
+{
+  "plugins": [
+    {
+      "package_name": "test-plugin",
+      "name": "Test",
+      "display_name": "Test Plugin",
+      "author_id": "test",
+      "author_name": "Test",
+      "version": "1.0",
+      "description": "Test",
+      "file": "plugins/test.cblplugin",
+      "hash_file": "plugins/test.hash.json",
+      "sha256": "abc123",
+      "size": 100,
+      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/test.cblplugin",
+      "uploaded_at": "2026-09-27T00:00:00Z"
+    }
+  ]
+}
