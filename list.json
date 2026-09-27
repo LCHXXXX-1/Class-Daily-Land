@@ -29,6 +29,21 @@
       "size": 806,
       "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.lchxxxx-1.clock.cblplugin",
       "uploaded_at": "2026-09-27T07:59:29.273486+00:00"
+    },
+    {
+      "package_name": "class.hexwisp72.disaster-alert",
+      "name": "disaster-alert",
+      "display_name": "灾害预警",
+      "author_id": "hexwisp72",
+      "author_name": "hexwisp72",
+      "version": "1.0.0",
+      "description": "地震预警（ICL/Wolfx 数据源，按经纬度计算横波到达倒计时）与气象灾害预警（中央气象台），支持主岛倒计时片段、副岛展示与下拉详情",
+      "file": "plugins/class.hexwisp72.disaster-alert.cblplugin",
+      "hash_file": "plugins/class.hexwisp72.disaster-alert.hash.json",
+      "sha256": "713f5ff43b28e252b8a9a08951796ca6a218d5122836c3105f62c29af10437b6",
+      "size": 90190,
+      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.disaster-alert.cblplugin",
+      "uploaded_at": "2026-09-27T07:59:43.004217+00:00"
     }
   ]
 }
