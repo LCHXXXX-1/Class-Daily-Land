@@ -1,0 +1,19 @@
+{
+  "plugins": [
+    {
+      "package_name": "class.hexwisp72.audio",
+      "name": "audio",
+      "display_name": "媒体播放",
+      "author_id": "hexwisp72",
+      "author_name": "hexwisp72",
+      "version": "1.0.0",
+      "description": "用 Windows SMTC 显示正在播放的媒体（歌名/歌手/暂停），可显示在主岛或副岛，停止后自动隐藏",
+      "file": "plugins/class.hexwisp72.audio.cblplugin",
+      "hash_file": "plugins/class.hexwisp72.audio.hash.json",
+      "sha256": "bafc760aa6c1d965bf88d5256065b13a1bebd2134e30ea73a707c788ee09c65b",
+      "size": 7979,
+      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.audio.cblplugin",
+      "uploaded_at": "2026-09-27T07:55:13.126809+00:00"
+    }
+  ]
+}
