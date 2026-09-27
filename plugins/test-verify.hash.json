@@ -1,0 +1,8 @@
+{
+  "package_name": "test-verify",
+  "file": "plugins/test-verify.cblplugin",
+  "sha256": "abc123",
+  "size": 100,
+  "version": "1.0.0",
+  "created_at": "2026-09-27T07:45:56.317850+00:00"
+}
