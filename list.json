@@ -14,6 +14,21 @@
       "size": 7979,
       "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.audio.cblplugin",
       "uploaded_at": "2026-09-27T07:56:13.985800+00:00"
+    },
+    {
+      "package_name": "class.lchxxxx-1.clock",
+      "name": "clock",
+      "display_name": "时钟",
+      "author_id": "lchxxxx-1",
+      "author_name": "LCHXXXX-1",
+      "version": "1.0.0",
+      "description": "在灵动岛下拉面板显示当前时间和日期",
+      "file": "plugins/class.lchxxxx-1.clock.cblplugin",
+      "hash_file": "plugins/class.lchxxxx-1.clock.hash.json",
+      "sha256": "31ec07e9b2bf8b07a9c103cc8a43aa2a5aeff6f329ac6d7bb9faad1de5b96118",
+      "size": 806,
+      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.lchxxxx-1.clock.cblplugin",
+      "uploaded_at": "2026-09-27T07:59:29.273486+00:00"
     }
   ]
 }
