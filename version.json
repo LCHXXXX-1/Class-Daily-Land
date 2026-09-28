@@ -1,6 +1,6 @@
 {
-    "version": "4.1",
-    "data": "1.新增插件商店\n2.优化GUI界面\n3.一些小功能添加",
-    "download_url": "https://gitee.com/lchxxxx/class-daily-land/releases/download/Version/Class-Daily-Land-4.1.zip",
+    "version": "4.1.1",
+    "data": "1.修复已知问题",
+    "download_url": "https://gitee.com/lchxxxx/class-daily-land/releases/download/Version/Class-Daily-Land-4.1.1.zip",
     "force_update": false
 }
