@@ -1,6 +1,6 @@
 {
     "version": "4.1.1",
-    "data": "1.修复已知问题",
+    "data": "1.修复已知问题\n2.如果更新失败请自行启动Launcher.exe",
     "download_url": "https://gitee.com/lchxxxx/class-daily-land/releases/download/Version/Class-Daily-Land-4.1.1.zip",
     "force_update": false
 }
