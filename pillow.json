@@ -1,0 +1,18 @@
+{
+  "name": "pillow",
+  "version": "10.2.0",
+  "requires": [],
+  "files": [
+    {
+      "path": "pillow-10.2.0-cp311-cp311-win_amd64.whl",
+      "sha256": "1da3b2703afd040cf65ec97efea81cfba59cdbed9c11d8efc5ab09df9509fc56",
+      "size": 2621395,
+      "urls": [
+        "https://files.pythonhosted.org/packages/43/56/f92715a873187b5eff72a4a0d2ac6258e18e9bfb0e136aafde65c49a841a/pillow-10.2.0-cp311-cp311-win_amd64.whl",
+        "https://pypi.tuna.tsinghua.edu.cn/packages/43/56/f92715a873187b5eff72a4a0d2ac6258e18e9bfb0e136aafde65c49a841a/pillow-10.2.0-cp311-cp311-win_amd64.whl",
+        "https://mirrors.aliyun.com/pypi/packages/43/56/f92715a873187b5eff72a4a0d2ac6258e18e9bfb0e136aafde65c49a841a/pillow-10.2.0-cp311-cp311-win_amd64.whl",
+        "https://mirrors.cloud.tencent.com/pypi/packages/43/56/f92715a873187b5eff72a4a0d2ac6258e18e9bfb0e136aafde65c49a841a/pillow-10.2.0-cp311-cp311-win_amd64.whl"
+      ]
+    }
+  ]
+}
