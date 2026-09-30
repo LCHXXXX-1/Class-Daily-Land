@@ -52,7 +52,7 @@
       "author_id": "hexwisp72",
       "author_name": "hexwisp72",
       "version": "1.0.0",
-      "description": "根据入学年级自动计算高考日期，在下拉面板显示倒计时",
+      "description": "根据入学年级计算高考日期，在下拉面板显示倒计时",
       "file": "plugins/class.hexwisp72.gaokao-countdown.cblplugin",
       "hash_file": "plugins/class.hexwisp72.gaokao-countdown.hash.json",
       "sha256": "f08c9508b92317bbd5c114da26dde14d75c610721da8a9ffd2df53c1fc9bc616",
