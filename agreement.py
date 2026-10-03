@@ -64,9 +64,9 @@ class AgreementDialog(QDialog):
 
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
-        agree = QPushButton("同意")
+        agree = QPushButton("同意，开始使用")
         agree.clicked.connect(self._on_agree)
-        disagree = QPushButton("不同意")
+        disagree = QPushButton("不同意，退出")
         disagree.clicked.connect(self.reject)
         btn_layout.addWidget(agree)
         btn_layout.addWidget(disagree)
