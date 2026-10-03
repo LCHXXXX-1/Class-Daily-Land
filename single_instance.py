@@ -1,8 +1,6 @@
 import sys
 
 ERROR_ALREADY_EXISTS = 183
-
-# 与 installer.py 的 APP_MUTEX 保持一致
 LOCK_NAME = "ClassDailyLand_SingleInstance_Mutex"
 
 
@@ -17,8 +15,10 @@ def acquire_single_instance_lock(name=LOCK_NAME):
     handle = kernel32.CreateMutexW(None, False, name)
     last_error = kernel32.GetLastError()
 
+    if not handle:
+        raise ctypes.WinError(last_error or 1)
+
     if last_error == ERROR_ALREADY_EXISTS:
-        if handle:
-            kernel32.CloseHandle(handle)
+        kernel32.CloseHandle(handle)
         return None
     return handle

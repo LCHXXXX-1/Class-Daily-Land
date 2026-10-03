@@ -2,13 +2,14 @@ import os
 import sys
 import shutil
 
-from PySide6.QtWidgets import (QApplication, QFileDialog, QMessageBox,
-                               QSystemTrayIcon)
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt
 
 from paths import CONFIG_DIR, PLUGINS_DIR, ensure_dirs
 from utils import set_window_icon
-from gui import ClassDailyLandApp
+from ui_common import install_touch_scrolling
+import theme
+from gui import ClassBoardApp
 from schedule import ScheduleManager
 from dynamic_island import DynamicIsland
 from sub_island import SubIsland
@@ -23,9 +24,16 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 
 
 if __name__ == '__main__':
-    lock = acquire_single_instance_lock()
+    print("程序开始")
+    try:
+        lock = acquire_single_instance_lock()
+    except OSError as e:
+        print(f"单实例锁创建失败：{e}")
+        sys.exit(1)
     if lock is None:
+        print("已经有很多个啦，退出")
         sys.exit(0)
+    print("拿到单实例锁")
 
     ensure_dirs()
 
@@ -36,10 +44,14 @@ if __name__ == '__main__':
     app.setQuitOnLastWindowClosed(False)
     set_window_icon(app)
 
+    install_touch_scrolling(app)
+
     if not agreement.check_agreement(CONFIG_DIR):
         sys.exit(0)
 
     settings = SettingsManager(CONFIG_DIR)
+    theme.init(settings)
+    theme.apply_theme(app)
     schedule_manager = ScheduleManager(CONFIG_DIR)
     controller = AppController(settings)
 
@@ -52,16 +64,17 @@ if __name__ == '__main__':
         if window is not None:
             window.update()
 
-    def on_notify(text, is_end=False):
+    def on_notify(text, is_end=False, force=False):
         if island is not None:
-            island.notify(text, is_end)
+            island.notify(text, is_end, force)
 
     plugin_manager = PluginManager(
-        PLUGINS_DIR, on_refresh=on_refresh, on_notify=on_notify)
+        PLUGINS_DIR, on_refresh=on_refresh, on_notify=on_notify,
+        settings=settings)
     plugin_manager.set_schedule_status_provider(schedule_manager.get_status)
 
-    window = ClassDailyLandApp(CONFIG_DIR, CONFIG_FILE, schedule_manager,
-                               settings, plugin_manager, controller)
+    window = ClassBoardApp(CONFIG_DIR, CONFIG_FILE, schedule_manager,
+                           settings, plugin_manager, controller)
     island = DynamicIsland(schedule_manager, settings, plugin_manager,
                            controller)
     sub_island = SubIsland(settings, plugin_manager, controller)
@@ -82,6 +95,7 @@ if __name__ == '__main__':
     controller.show_sub_island(settings.get('show_sub_island', True))
     controller.set_main_opacity(settings.get('main_opacity', 1.0))
 
+    plugin_manager.set_disabled_ids(settings.get('disabled_plugins', []))
     plugin_manager.load_all()
 
     def open_settings():
@@ -89,29 +103,29 @@ if __name__ == '__main__':
 
     def add_plugin():
         path, _ = QFileDialog.getOpenFileName(
-            None, "选择插件文件", "",
-            "Class Daily Land 插件 (*.cdlplugin);;所有文件 (*)")
+            None, "挑一个插件文件", "",
+            "Class Daily Land 插件 (*.cblplugin);;所有文件 (*)")
         if not path:
             return
         target = os.path.join(PLUGINS_DIR, os.path.basename(path))
         try:
             shutil.copy(path, target)
         except Exception as e:
-            QMessageBox.critical(None, "导入失败", f"复制失败：{e}")
+            QMessageBox.critical(None, "没装上", f"复制没成功：{e}")
             return
-        QMessageBox.information(None, "已导入", "插件已导入，重启后生效。")
+        QMessageBox.information(None, "装好啦", "插件装好啦，重启一下就能用~")
 
     def do_exit():
         plugin_manager.stop_all()
         app.quit()
 
+    print("创建托盘")
     tray = AppTray(app, controller, open_settings, add_plugin, do_exit,
                    on_holidays=window.open_holidays,
                    on_weekend=window.open_weekend)
     controller.bind(tray=tray)
     tray.show()
-
-    if not QSystemTrayIcon.isSystemTrayAvailable():
-        QMessageBox.warning(None, "提示", "系统托盘不可用，改用设置窗口进行操作。")
+    print("托盘已 show()，进入事件循环")
 
     sys.exit(app.exec())
+    #才不是给你看的呢～

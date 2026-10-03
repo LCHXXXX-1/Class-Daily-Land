@@ -1,81 +1,39 @@
+"""设置窗口（重写版）。
+
+布局：左侧导航（品牌 / 搜索 / 分组导航）+ 右侧内容区（页面标题 + 卡片列表），
+底部是「恢复本页默认 / 完成」。
+
+设计要点：
+- 所有设置项即时保存并立即生效（沿用宿主 controller.apply_settings）
+- 页面切换时卡片错峰淡入；导航高亮块平滑滑动；开关 / 分段选择器带动画
+- 支持设置项搜索：输入关键词 → 结果列表 → 点击跳转并高亮定位
+- 旧设置界面的选项全部保留，并新增了「插件市场」页
+
+入口保持不变：``from settings_dialog import SettingsDialog``，
+构造签名与旧版一致，``gui.py`` / 托盘无需改动。
+"""
 import os
 
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                               QStackedWidget, QWidget, QFormLayout, QSpinBox,
-                               QDoubleSpinBox, QCheckBox, QPushButton,
-                               QMessageBox, QFrame, QGraphicsOpacityEffect,
-                               QListWidget, QScrollArea, QApplication, QSlider,
-                               QLineEdit)
-from PySide6.QtCore import (Qt, QPropertyAnimation, QEasingCurve, QTimer,
-                            QAbstractAnimation, QPoint)
-from PySide6.QtGui import QFont
+from PySide6.QtCore import (Qt, QTimer, QPoint, QPropertyAnimation,
+                            QEasingCurve, QAbstractAnimation)
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QFrame,
+                               QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QScrollArea,
+                               QStackedWidget, QVBoxLayout, QWidget)
 
-from ui_common import setup_dialog_style as _setup_dialog_style
+from ui_common import (setup_dialog_style as _setup_dialog_style,
+                       apply_window_material, disable_mica, set_dark_titlebar,
+                       setup_touch_scroll)
 
-
-STYLE = """
-QDialog { background: #ffffff; }
-QLabel#pageTitle { font-size: 22px; font-weight: 600; color: #1b1b1b; }
-QLabel#sectionTitle { font-size: 14px; font-weight: 600; color: #1b1b1b;
-                      padding-top: 6px; }
-QLabel#formLabel { color: #1b1b1b; font-size: 13px; }
-QLabel#hint { color: #888888; font-size: 12px; }
-
-QPushButton#navButton {
-    text-align: left; padding-left: 16px; height: 42px;
-    border: none; border-radius: 6px;
-    font-size: 14px; color: #1b1b1b; background: transparent;
-}
-QPushButton#navButton:hover { background: #e9e9e9; }
-QPushButton#navButton:checked { background: #e2e2e2; color: #0067c0; }
-
-QSpinBox, QDoubleSpinBox {
-    background: #ffffff; border: 1px solid #d0d0d0; border-radius: 4px;
-    padding: 4px 8px; min-width: 110px; color: #1b1b1b;
-}
-QSpinBox:hover, QDoubleSpinBox:hover { border: 1px solid #b0b0b0; }
-QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid #0067c0; }
-
-QCheckBox { color: #1b1b1b; font-size: 13px; spacing: 8px; }
-QCheckBox::indicator {
-    width: 18px; height: 18px;
-    border: 1px solid #b0b0b0; border-radius: 4px; background: #ffffff;
-}
-QCheckBox::indicator:hover { border: 1px solid #0067c0; }
-QCheckBox::indicator:checked { background: #0067c0; border: 1px solid #0067c0; }
-
-QPushButton {
-    background: #ffffff; border: 1px solid #d0d0d0; border-radius: 4px;
-    padding: 6px 18px; font-size: 13px; color: #1b1b1b;
-}
-QPushButton:hover { background: #f5f5f5; }
-QPushButton:pressed { background: #ececec; }
-QPushButton#primary { background: #0067c0; color: white; border: none; }
-QPushButton#primary:hover { background: #1975c5; }
-
-QFrame#divider { border: none; border-top: 1px solid #e5e5e5; }
-
-QListWidget#pluginList {
-    border: 1px solid #e0e0e0; border-radius: 6px;
-    background: #fafafa; outline: none;
-}
-QListWidget#pluginList::item {
-    height: 40px; padding-left: 10px; border-bottom: 1px solid #eee;
-}
-"""
+import theme
+from about import get_version
+from utils import APP_NAME, is_windows_11, windows_display_name
+from settings_widgets import (NavRail, SearchBox, SectionCard, StaggerPlayer)
+from settings_rows import RowWidget, SettingRow
 
 
 class SettingsDialog(QDialog):
-    NAV_ITEMS = [
-        ("🖥", "主窗口"),
-        ("📌", "灵动岛"),
-        ("✨", "动画"),
-        ("🧩", "插件"),
-        ("ℹ️", "关于"),
-    ]
-    NAV_BTN_H = 42
-    NAV_BTN_GAP = 6
-
+    # (图标, 标题, 副标题) 三元组
     def __init__(self, settings, schedule_manager=None,
                  plugin_manager=None, controller=None, on_apply=None,
                  parent=None):
@@ -86,54 +44,501 @@ class SettingsDialog(QDialog):
         self.controller = controller
         self.on_apply = on_apply
 
-        self.setWindowTitle("设置")
-        self.resize(820, 580)
-        self.setMinimumSize(680, 500)
-        _setup_dialog_style(self)
-        self.setStyleSheet(STYLE)
-
+        self.rows = []            # 全部 RowWidget
+        self.pages = []           # [{icon,title,sub,widget,index,anim}]
+        self._search_index = []   # [{text,page,widget,label}]
+        self._search_hits = []
         self._opened = False
-        self._nav_buttons = []
+        self._test_seconds = int(self.settings.get("island_countdown_sec", 60))
+        self.market_page = None
 
-        root = QVBoxLayout(self)
+        # Windows 11 云母（Mica）材质：仅 Win11 且开启时才生效
+        self.win11 = is_windows_11()
+        self._mica_active = bool(self.win11 and
+                                 self.settings.get("settings_mica", True))
+        self._last_material_ok = False
+
+        self.setObjectName("settingsDialog")
+        self.setWindowTitle("设置")
+        self.resize(960, 660)
+        self.setMinimumSize(780, 540)
+        # 透明属性必须在原生窗口创建前设置好（由 setup_dialog_style 处理）
+        _setup_dialog_style(self, translucent=self._mica_active)
+        self._apply_qss()
+        if self._mica_active:
+            # 显示前就应用云母，避免启动瞬间黑屏闪烁
+            ok = apply_window_material(self, mica=True, dark=theme.is_dark())
+            self._last_material_ok = ok
+            if not ok:
+                self._mica_active = False
+                self.setAttribute(Qt.WA_TranslucentBackground, False)
+                disable_mica(self)
+                self._apply_qss()
+        theme.theme_changed_connect(self._on_theme_changed)
+
+        self._build_root()
+        self._build_pages()
+        self._build_nav()
+        self._select(0, animate=False)
+
+    # ==================================================
+    # 样式
+    # ==================================================
+    def _apply_qss(self):
+        self.setStyleSheet(theme.settings_qss(glass=self._mica_active))
+
+    def _on_theme_changed(self):
+        self._apply_qss()
+        self.nav.restyle()
+        self._repolish(self)
+        if self._mica_active:
+            set_dark_titlebar(self, theme.is_dark())
+        self.update()
+
+    @staticmethod
+    def _repolish(widget):
+        try:
+            for w in widget.findChildren(QWidget):
+                w.style().unpolish(w)
+                w.style().polish(w)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        except Exception:
+            pass
+
+    # ==================================================
+    # 骨架（搭得又快又稳）
+    # ==================================================
+    def _build_root(self):
+        root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        body = QHBoxLayout()
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
+        self.sidebar = self._build_sidebar()
+        root.addWidget(self.sidebar)
+        self.content = self._build_content()
+        root.addWidget(self.content, 1)
 
-        self._nav_scroll = QScrollArea()
-        self._nav_scroll.setFixedWidth(200)
-        self._nav_scroll.setWidgetResizable(True)
-        self._nav_scroll.setFrameShape(QFrame.NoFrame)
-        self._nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._nav_scroll.setStyleSheet(
-            "QScrollArea { background: #f3f3f3; border: none; }")
-        self._nav_container = QWidget()
-        self._nav_container.setStyleSheet("background: #f3f3f3;")
-        self._nav_layout = QVBoxLayout(self._nav_container)
-        self._nav_layout.setContentsMargins(0, 20, 0, 20)
-        self._nav_layout.setSpacing(self.NAV_BTN_GAP)
-        self._nav_layout.setAlignment(Qt.AlignTop)
-        self._nav_scroll.setWidget(self._nav_container)
-        body.addWidget(self._nav_scroll)
+    def _build_sidebar(self):
+        bar = QFrame()
+        bar.setObjectName("sidebar")
+        bar.setFixedWidth(238)
+        lay = QVBoxLayout(bar)
+        lay.setContentsMargins(16, 18, 16, 16)
+        lay.setSpacing(12)
+
+        # 品牌区
+        brand = QHBoxLayout()
+        brand.setSpacing(10)
+        logo = QLabel("🏫")
+        logo.setStyleSheet("font-size:24px;")
+        brand.addWidget(logo)
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        t = QLabel(APP_NAME)
+        t.setObjectName("brandTitle")
+        s = QLabel("偏好设置")
+        s.setObjectName("brandSub")
+        col.addWidget(t)
+        col.addWidget(s)
+        brand.addLayout(col)
+        brand.addStretch(1)
+        lay.addLayout(brand)
+
+        # 搜索
+        self.search = SearchBox()
+        self.search.textChanged.connect(self._on_search)
+        lay.addWidget(self.search)
+
+        # 搜索结果（与导航二选一显示）
+        self.results = QListWidget()
+        self.results.setObjectName("searchResults")
+        self.results.setFrameShape(QFrame.NoFrame)
+        self.results.setMaximumHeight(300)
+        self.results.itemClicked.connect(self._on_result_clicked)
+        self.results.hide()
+        lay.addWidget(self.results)
+
+        # 导航（想去哪页点哪页）
+        self.nav_scroll = QScrollArea()
+        self.nav_scroll.setWidgetResizable(True)
+        self.nav_scroll.setFrameShape(QFrame.NoFrame)
+        self.nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.nav_scroll.setStyleSheet(
+            "QScrollArea{background:transparent;border:none;}")
+        self.nav_scroll.viewport().setAutoFillBackground(False)
+        self.nav = NavRail()
+        self.nav.item_clicked.connect(self._select)
+        self.nav_scroll.setWidget(self.nav)
+        lay.addWidget(self.nav_scroll, 1)
+
+        # 触屏：左侧导航也能手指上下滑
+        setup_touch_scroll(self.nav_scroll, mouse_drag=True)
+
+        # 版本（如实展示）
+        ver = QLabel(f"{APP_NAME} v{get_version()}")
+        ver.setObjectName("versionLbl")
+        ver.setAlignment(Qt.AlignCenter)
+        lay.addWidget(ver)
+        return bar
+
+    def _build_content(self):
+        wrap = QFrame()
+        wrap.setObjectName("contentWrap")
+        lay = QVBoxLayout(wrap)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._page_main())
-        self.stack.addWidget(self._page_island())
-        self.stack.addWidget(self._page_anim())
-        self.stack.addWidget(self._page_plugins())
-        self.stack.addWidget(self._page_about())
-        body.addWidget(self.stack, 1)
-        root.addLayout(body, 1)
+        lay.addWidget(self.stack, 1)
 
-        self._nav_items = list(self.NAV_ITEMS)
+        footer = QFrame()
+        fl = QHBoxLayout(footer)
+        fl.setContentsMargins(28, 8, 28, 14)
+        fl.setSpacing(10)
+        self.btn_reset = QPushButton("本页恢复默认")
+        self.btn_reset.setObjectName("ghost")
+        self.btn_reset.setCursor(Qt.PointingHandCursor)
+        self.btn_reset.clicked.connect(self._reset_current_page)
+        fl.addWidget(self.btn_reset)
+        self.saved_hint = QLabel("改动即时保存生效")
+        self.saved_hint.setObjectName("hint")
+        fl.addWidget(self.saved_hint)
+        fl.addStretch(1)
+        btn_close = QPushButton("完成")
+        btn_close.setObjectName("primary")
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.clicked.connect(self.accept)
+        fl.addWidget(btn_close)
+        lay.addWidget(footer)
+        return wrap
+
+    # ==================================================
+    # 页面（逐页构建）
+    # ==================================================
+    def _make_page(self, title, subtitle):
+        page = QWidget()
+        v = QVBoxLayout(page)
+        v.setContentsMargins(32, 24, 24, 8)
+        v.setSpacing(6)
+
+        t = QLabel(title)
+        t.setObjectName("pageTitle")
+        v.addWidget(t)
+        page._title_lbl = t
+        page._sub_lbl = None
+        if subtitle:
+            s = QLabel(subtitle)
+            s.setObjectName("pageSub")
+            s.setWordWrap(True)
+            v.addWidget(s)
+            page._sub_lbl = s
+        v.addSpacing(10)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("pageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        inner = QWidget()
+        inner.setObjectName("pageInner")
+        il = QVBoxLayout(inner)
+        il.setContentsMargins(0, 0, 10, 16)
+        il.setSpacing(14)
+        il.setAlignment(Qt.AlignTop)
+        scroll.setWidget(inner)
+        v.addWidget(scroll, 1)
+
+        # 触屏：页面内容手指拖拽 + 惯性滑动
+        # 页面里有滑杆 / 开关这类要拖的控件，鼠标左键手势就不开了，
+        # 免得和它们抢拖拽；触摸（TouchGesture）不受影响照样能滑。
+        setup_touch_scroll(scroll, mouse_drag=False)
+
+        page._inner = inner
+        page._inner_layout = il
+        page._scroll = scroll
+        page._anim = []
+        page._info = {"icon": "", "title": title, "sub": subtitle,
+                      "widget": page, "anim": page._anim, "index": -1}
+        return page
+
+    def _add_page(self, icon, title, page, subtitle=""):
+        info = page._info
+        info["icon"] = icon
+        info["title"] = title
+        if subtitle:
+            info["sub"] = subtitle
+        info["index"] = len(self.pages)
+        self.pages.append(info)
+        self.stack.addWidget(page)
+        self._register_search(title, info, None, title, icon)
+        return info
+
+    def _add_card(self, page, title="", subtitle=""):
+        card = SectionCard(title, subtitle)
+        page._inner_layout.addWidget(card)
+        page._anim.append(card)
+        return card
+
+    def _add_rows(self, page, card, specs):
+        for spec in specs:
+            rw = RowWidget(spec, self)
+            rw._page_info = page._info
+            card.add_widget(rw)
+            self.rows.append(rw)
+            self._register_search(rw.search_text, page._info, rw, spec.title)
+        return card
+
+    def _button_row(self, page, card, buttons):
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(8, 4, 8, 4)
+        h.setSpacing(8)
+        for text, cb in buttons:
+            b = QPushButton(text)
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(cb)
+            h.addWidget(b)
+        h.addStretch(1)
+        card.add_widget(row)
+        return row
+
+    def _build_pages(self):
+        self._page_general()
+        self._page_appearance()
+        self._page_island()
+        self._page_schedule()
+        self._page_market()
+        self._page_advanced()
         self._add_plugin_pages()
-        self._build_nav_buttons()
+        self._page_about()
+
+    # ---------- 通用 ----------
+    def _page_general(self):
+        page = self._make_page("通用", "窗口显示、作业滚动、更新检查")
+        card = self._add_card(page, "窗口长什么样")
+        self._add_rows(page, card, [
+            SettingRow("show_main_window", "显示班级日常窗口", "switch",
+                       hint="关掉后也能从托盘菜单重新打开"),
+            SettingRow("main_width_ratio", "窗口宽度", "slider",
+                       vmin=15, vmax=50, suffix="%", scale=0.01,
+                       hint="占屏幕宽度的百分之多少"),
+            SettingRow("main_opacity", "窗口透明度", "slider",
+                       vmin=0, vmax=100, suffix="%", scale=0.01,
+                       hint="填 0 就完全看不见了"),
+            SettingRow("main_font_size", "正文字号", "spin",
+                       vmin=8, vmax=30, suffix=" px"),
+        ])
+        card = self._add_card(page, "作业怎么滚")
+        self._add_rows(page, card, [
+            SettingRow("main_auto_scroll", "自动滚动作业", "switch"),
+            SettingRow("main_scroll_interval", "滚动间隔", "spin",
+                       vmin=20, vmax=200, suffix=" ms"),
+            SettingRow("main_scroll_step", "每步滚动距离", "spin",
+                       vmin=1, vmax=10, suffix=" px"),
+            SettingRow("main_scroll_pause", "到底暂停", "spin",
+                       vmin=0, vmax=200, suffix=" 次"),
+        ])
+        card = self._add_card(page, "启动与更新")
+        self._add_rows(page, card, [
+            SettingRow("check_update_on_start", "启动时检查更新", "switch",
+                       hint="由独立更新器处理，也可随时手动检查"),
+        ])
+        self._add_page("⚙️", "通用", page, "窗口显示、作业滚动、更新检查")
+
+    # ---------- 外观 ----------
+    def _page_appearance(self):
+        page = self._make_page("外观", "主题和渐显动画")
+        card = self._add_card(page, "颜色主题")
+        self._add_rows(page, card, [
+            SettingRow("theme_mode", "颜色模式", "segmented",
+                       options=[("跟随系统", "system"), ("浅色", "light"),
+                                ("深色", "dark")],
+                       get=lambda: self.settings.get("theme_mode", "system"),
+                       setv=self._set_theme, default="system"),
+        ])
+        card = self._add_card(page, "淡入淡出")
+        self._add_rows(page, card, [
+            SettingRow("anim_fade_window", "窗口打开时渐显", "switch"),
+            SettingRow("anim_fade_panel", "面板展开时渐显", "switch"),
+            SettingRow("anim_fade_text", "文字变化时渐显", "switch"),
+            SettingRow("anim_duration", "动画时长", "spin",
+                       vmin=100, vmax=2000, step=50, suffix=" ms"),
+        ])
+
+        # 窗口材质：Windows 11 云母 / Windows 10 普通
+        card = self._add_card(page, "窗口材质",
+                              f"当前系统是：{windows_display_name()}")
+        if self.win11:
+            self._add_rows(page, card, [
+                SettingRow("settings_mica", "云母材质（Mica）", "switch",
+                           hint="Windows 11 半透明云母背板，明暗跟随系统",
+                           get=lambda: self.settings.get("settings_mica", True),
+                           setv=self._set_mica),
+            ])
+        else:
+            lbl = QLabel("云母材质需要 Windows 11，当前系统使用普通窗口。")
+            lbl.setObjectName("hint")
+            lbl.setWordWrap(True)
+            card.add_widget(lbl)
+        self._add_page("🎨", "外观", page, "主题、动画、窗口材质")
+
+    # ---------- 灵动岛 ----------
+    def _page_island(self):
+        page = self._make_page("灵动岛", "主岛副岛的显示与动画")
+        card = self._add_card(page, "主岛")
+        self._add_rows(page, card, [
+            SettingRow("show_island", "显示灵动岛", "switch"),
+            SettingRow("island_top_margin", "距屏幕顶部距离", "spin",
+                       vmin=0, vmax=100, suffix=" px"),
+            SettingRow("island_alert_width", "提醒条宽度", "spin",
+                       vmin=200, vmax=800, suffix=" px"),
+            SettingRow("island_alert_hold_ms", "提醒条停留", "spin",
+                       vmin=100, vmax=5000, step=50, suffix=" ms"),
+            SettingRow("island_hide_on_fullscreen", "仅全屏时隐藏", "switch"),
+            SettingRow("island_show_wakeup_anim", "启用唤醒动画", "switch",
+                       hint="圆圈 → 胶囊，帅吧"),
+        ])
+        card = self._add_card(page, "副岛")
+        self._add_rows(page, card, [
+            SettingRow("show_sub_island", "显示副岛", "switch",
+                       hint="固定显示在主岛右侧"),
+            SettingRow("sub_island_collapsed", "默认收成圆形", "switch"),
+            SettingRow("sub_island_auto_collapse_sec", "无内容自动收起",
+                       "spin", vmin=0, vmax=120, suffix=" 秒",
+                       hint="填 0 表示不自动收起"),
+        ])
+        self._add_page("🏝️", "灵动岛", page, "主岛副岛的显示与动画")
+
+    # ---------- 课表与提醒 ----------
+    def _page_schedule(self):
+        page = self._make_page("课表与提醒", "上课提醒、时间偏移、课表工具")
+
+        card = self._add_card(page, "上课提醒")
+        specs = [
+            SettingRow("island_countdown_sec", "倒计时时长", "spin",
+                       vmin=5, vmax=600, suffix=" 秒",
+                       hint="上课前最后几秒展开蓝色倒计时"),
+        ]
+        if self.schedule is not None:
+            specs.insert(0, SettingRow(
+                "", "提前提醒", "spin", vmin=0, vmax=60, suffix=" 分钟",
+                get=lambda: int(self.schedule.advance_minutes),
+                setv=lambda v: self.schedule.set_advance_minutes(int(v)),
+                default=2,
+                hint="提前多少分钟进入上课状态（结束时间不变）"))
+            specs.append(SettingRow(
+                "", "时间偏移", "spin", vmin=-1800, vmax=1800, suffix=" 秒",
+                get=lambda: int(self.schedule.time_offset_seconds),
+                setv=lambda v: self.schedule.set_time_offset_seconds(int(v)),
+                default=0,
+                hint="负数为提前、正数为延后，提醒和面板都会随之变化"))
+        self._add_rows(page, card, specs)
+
+        card = self._add_card(page, "课表和值日",
+                              "改课表、管多课表、导入导出和假期")
+        self._button_row(page, card, [
+            ("值日生名单", self._open_duty),
+            ("课表编辑器", self._open_course),
+            ("课表管理 / 导入导出…", self._open_timetable_manager),
+        ])
+        self._button_row(page, card, [
+            ("放假安排", self._open_holidays),
+            ("周末作息表", self._open_weekend),
+        ])
+
+        card = self._add_card(page, "联动测试", "灵动岛的倒计时和状态，演给你看")
+        self._add_rows(page, card, [
+            SettingRow("", "测试时长", "spin", vmin=3, vmax=600,
+                       suffix=" 秒", default=self._test_seconds,
+                       get=lambda: self._test_seconds,
+                       setv=lambda v: setattr(self, "_test_seconds", int(v)),
+                       hint="只是演示用，不影响真实的上课时间"),
+        ])
+        self._button_row(page, card, [
+            ("倒计时试一下", self._test_countdown),
+            ("状态测试…", self._open_status_test),
+        ])
+        self._add_page("📅", "课表与提醒", page, "上课提醒、时间偏移、课表工具")
+
+    # ---------- 插件市场 ----------
+    def _page_market(self):
+        page = self._make_page(
+            "插件市场", "去 GitHub 仓库发现、安装、更新插件（即时生效或喊你重启）")
+        if self.plugin_manager is None:
+            card = self._add_card(page, "插件系统还没启用")
+            lbl = QLabel("尚未接入插件管理器，插件市场暂不可用。")
+            lbl.setObjectName("hint")
+            lbl.setWordWrap(True)
+            card.add_widget(lbl)
+            self._add_page("🧩", "插件市场", page, "插件系统还没启用")
+            return
+
+        from market_page import MarketPage
+        holder = QWidget()
+        hl = QVBoxLayout(holder)
+        hl.setContentsMargins(0, 0, 0, 0)
+        self.market_page = MarketPage(self.plugin_manager, self.settings)
+        self.market_page.setObjectName("pageInner")
+        hl.addWidget(self.market_page, 1)
+        holder.setProperty("noUnfold", True)
+        page._inner_layout.addWidget(holder, 1)
+        page._anim.append(holder)
+        self._add_page("🧩", "插件市场", page, "从远程仓库安装和更新插件")
+
+    # ---------- 高级 ----------
+    def _page_advanced(self):
+        page = self._make_page("高级", "本地插件管理与维护，包在我身上")
+        card = self._add_card(page, "本地插件", "启动时会加载的插件")
+        text = self._local_plugins_text()
+        lbl = QLabel(text)
+        lbl.setObjectName("hint")
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        card.add_widget(lbl)
+        self._button_row(page, card, [
+            ("安装本地插件…", self._import_plugin),
+            ("打开插件文件夹", self._open_plugins_dir),
+        ])
+
+        card = self._add_card(page, "日常维护")
+        self._button_row(page, card, [
+            ("打开配置文件夹", self._open_config_dir),
+            ("恢复全部默认", self._reset_all),
+        ])
+        self._add_page("🛠️", "高级", page, "插件和维护都在这儿")
+
+    # ---------- 关于 ----------
+    def _page_about(self):
+        page = self._make_page("关于", "版本和更新")
+        card = self._add_card(page)
+        version = get_version()
+        title = QLabel(APP_NAME)
+        f = title.font()
+        f.setPixelSize(26)
+        f.setBold(True)
+        title.setFont(f)
+        card.add_widget(title)
+        for text in (f"版本 v{version}",
+                     "一个轻量级的班级日常管理小工具",
+                     "作者：LCHXXXX、hexwisp72",
+                     "反馈：2352240265@qq.com",
+                     f"系统：{windows_display_name()}",
+                     ("窗口材质：Windows 11 云母（Mica）"
+                      if self._mica_active else "窗口材质：普通款")):
+            lbl = QLabel(text)
+            lbl.setObjectName("hint")
+            lbl.setWordWrap(True)
+            card.add_widget(lbl)
+        btn = QPushButton("检查更新")
+        btn.setObjectName("primary")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(self._open_updater)
+        card.add_widget(btn)
+        self._add_page("ℹ️", "关于", page, "版本和更新")
 
     def _add_plugin_pages(self):
-        """把插件注册的设置页追加到内置页之后。"""
         if self.plugin_manager is None:
             return
         try:
@@ -141,595 +546,232 @@ class SettingsDialog(QDialog):
         except Exception:
             pages = []
         for entry in pages:
-            title = str(entry.get('title', '插件设置'))
-            icon = entry.get('icon') or "🧩"
+            title = str(entry.get("title", "插件设置"))
+            icon = entry.get("icon") or "🧩"
             try:
-                content = entry['factory'](entry.get('api'))
+                content = entry["factory"](entry.get("api"))
             except Exception as e:
                 content = QLabel(f"插件设置加载失败：{e}")
+                content.setObjectName("hint")
                 content.setWordWrap(True)
-                try:
-                    self.plugin_manager.log(
-                        entry.get('name', 'plugin'), f'设置页构建失败: {e}')
-                except Exception:
-                    pass
-            page = self._page(title)
+            page = self._make_page(title, "插件自带的设置页")
+            card = self._add_card(page)
             if content is not None:
-                page._inner_layout.addWidget(content)
-            page._inner_layout.addStretch()
-            self.stack.addWidget(page)
-            self._nav_items.append((icon, title))
+                card.add_widget(content)
+            self._add_page(icon, title, page, "插件提供的页面")
 
-    def _build_nav_buttons(self):
-        for i, (icon, name) in enumerate(self._nav_items):
-            btn = QPushButton(f"  {icon}   {name}", self._nav_container)
-            btn.setObjectName("navButton")
-            btn.setCheckable(True)
-            btn.setAutoExclusive(True)
-            btn.setFixedHeight(self.NAV_BTN_H)
-            btn.clicked.connect(lambda _, idx=i: self._switch_page(idx))
-            eff = QGraphicsOpacityEffect(btn)
-            eff.setOpacity(1.0)
-            btn.setGraphicsEffect(eff)
-            self._nav_layout.addWidget(btn)
-            self._nav_buttons.append(btn)
+    # ==================================================
+    # 导航（想去哪页点哪页）
+    # ==================================================
+    def _build_nav(self):
+        for p in self.pages:
+            self.nav.add_item(p["icon"], p["title"])
 
-        # 左侧高亮滑块
-        self._nav_accent = QFrame(self._nav_container)
-        self._nav_accent.setFixedSize(3, self.NAV_BTN_H)
-        self._nav_accent.setStyleSheet(
-            "background: #0067c0; border: none; border-radius: 1px;")
-        self._nav_accent.raise_()
-        if self._nav_buttons:
-            self._nav_buttons[0].setChecked(True)
-            QTimer.singleShot(0, lambda: self._move_accent(0, animate=False))
-
-    def _move_accent(self, idx, animate=True):
-        if (not hasattr(self, '_nav_accent')
-                or not (0 <= idx < len(self._nav_buttons))):
-            return
-        btn = self._nav_buttons[idx]
-        target = QPoint(0, btn.y())
-        self._nav_accent.raise_()
-        if not animate:
-            self._nav_accent.move(target)
-            return
-        a = QPropertyAnimation(self._nav_accent, b"pos", self._nav_accent)
-        a.setDuration(740)
-        a.setStartValue(self._nav_accent.pos())
-        a.setEndValue(target)
-        a.setEasingCurve(QEasingCurve.OutQuint)
-        a.start(QAbstractAnimation.DeleteWhenStopped)
-
-    def _switch_page(self, idx):
+    def _select(self, idx, animate=True):
+        idx = max(0, min(len(self.pages) - 1, int(idx)))
         self.stack.setCurrentIndex(idx)
-        self._move_accent(idx)
+        self.nav.select(idx, animate=animate)
         if self._opened:
-            self._animate_page_in(self.stack.widget(idx))
+            self._play_page(self.pages[idx])
+        self.btn_reset.setEnabled(bool(self._page_rows(self.pages[idx])))
 
-    def _page(self, title):
-        page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: white; border: none; }")
-        inner = QWidget()
-        layout = QVBoxLayout(inner)
-        layout.setContentsMargins(36, 28, 36, 28)
-        layout.setSpacing(12)
-        title_label = QLabel(title)
-        title_label.setObjectName("pageTitle")
-        layout.addWidget(title_label)
-        divider = QFrame()
-        divider.setObjectName("divider")
-        divider.setFixedHeight(1)
-        layout.addWidget(divider)
-        scroll.setWidget(inner)
-        outer.addWidget(scroll)
-        page._inner_layout = layout
-        page._title_label = title_label
-        page._divider = divider
-        return page
+    def _play_page(self, page_info):
+        page = page_info["widget"]
+        # 标题 / 副标题淡入 + 卡片错峰淡入（只做透明度，不做高度/宽度动画，
+        # 免得每帧重排版卡成 PPT）
+        StaggerPlayer.fade(getattr(page, "_title_lbl", None),
+                           duration=200, delay=10)
+        StaggerPlayer.fade(getattr(page, "_sub_lbl", None),
+                           duration=200, delay=45)
+        StaggerPlayer(duration=240, step=55, delay=70).play(
+            page_info["anim"])
 
-    def _form(self, parent_layout):
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-        form.setHorizontalSpacing(28)
-        form.setVerticalSpacing(12)
-        form.setContentsMargins(0, 4, 0, 0)
-        parent_layout.addLayout(form)
-        return form
+    def _page_rows(self, page_info):
+        return [r for r in self.rows
+                if getattr(r, "_page_info", None) is page_info]
 
-    def _section(self, parent_layout, title):
-        lbl = QLabel(title)
-        lbl.setObjectName("sectionTitle")
-        parent_layout.addWidget(lbl)
+    # ==================================================
+    # 搜索
+    # ==================================================
+    def _register_search(self, text, page_info, widget, label, icon=""):
+        self._search_index.append({
+            "text": str(text).lower(),
+            "page": page_info,
+            "widget": widget,
+            "label": label,
+        })
 
-    @staticmethod
-    def _label(text):
-        lbl = QLabel(text)
-        lbl.setObjectName("formLabel")
-        return lbl
-
-    # ---------- 主窗口页 ----------
-    def _page_main(self):
-        page = self._page("主窗口")
-        L = page._inner_layout
-
-        self._section(L, "外观")
-        form = self._form(L)
-        self.width_ratio = QDoubleSpinBox()
-        self.width_ratio.setRange(0.15, 0.50)
-        self.width_ratio.setSingleStep(0.05)
-        self.width_ratio.setDecimals(2)
-        self.width_ratio.setValue(float(self.settings.get("main_width_ratio")))
-        self.width_ratio.valueChanged.connect(self._save_width)
-        form.addRow(self._label("窗口宽度（屏幕占比）"), self.width_ratio)
-
-        self.show_main = QCheckBox("显示班级日常窗口")
-        self.show_main.setChecked(
-            bool(self.settings.get("show_main_window", True)))
-        self.show_main.toggled.connect(self._save_visibility)
-        form.addRow(self._label("窗口显示"), self.show_main)
-
-        self.opacity_slider = QSlider(Qt.Horizontal)
-        self.opacity_slider.setRange(0, 100)
-        self.opacity_slider.setValue(
-            int(round(float(self.settings.get("main_opacity", 1.0)) * 100)))
-        self.opacity_slider.valueChanged.connect(self._save_opacity)
-        self.opacity_label = QLabel()
-        self._update_opacity_label(self.opacity_slider.value())
-        op_row = QHBoxLayout()
-        op_row.addWidget(self.opacity_slider, 1)
-        op_row.addWidget(self.opacity_label)
-        form.addRow(self._label("透明度（0=全透明）"), op_row)
-
-        self.font_size = QSpinBox()
-        self.font_size.setRange(8, 30)
-        self.font_size.setValue(int(self.settings.get("main_font_size")))
-        self.font_size.valueChanged.connect(self._save_font)
-        form.addRow(self._label("字号"), self.font_size)
-
-        self._section(L, "作业滚动")
-        form2 = self._form(L)
-        self.auto_scroll = QCheckBox("启用作业自动滚动")
-        self.auto_scroll.setChecked(bool(self.settings.get("main_auto_scroll")))
-        self.auto_scroll.toggled.connect(self._save_auto_scroll)
-        form2.addRow(self._label(""), self.auto_scroll)
-
-        self.scroll_interval = QSpinBox()
-        self.scroll_interval.setRange(20, 200)
-        self.scroll_interval.setSuffix(" ms")
-        self.scroll_interval.setValue(int(self.settings.get("main_scroll_interval")))
-        self.scroll_interval.valueChanged.connect(self._save_scroll)
-        form2.addRow(self._label("滚动间隔"), self.scroll_interval)
-
-        self.scroll_step = QSpinBox()
-        self.scroll_step.setRange(1, 10)
-        self.scroll_step.setSuffix(" px")
-        self.scroll_step.setValue(int(self.settings.get("main_scroll_step")))
-        self.scroll_step.valueChanged.connect(self._save_scroll)
-        form2.addRow(self._label("每步滚动"), self.scroll_step)
-
-        self.scroll_pause = QSpinBox()
-        self.scroll_pause.setRange(0, 200)
-        self.scroll_pause.setSuffix(" 次")
-        self.scroll_pause.setValue(int(self.settings.get("main_scroll_pause")))
-        self.scroll_pause.valueChanged.connect(self._save_scroll)
-        form2.addRow(self._label("到底暂停"), self.scroll_pause)
-
-        self._section(L, "课表提醒")
-        form3 = self._form(L)
-        self.advance_minutes = QSpinBox()
-        self.advance_minutes.setRange(0, 60)
-        self.advance_minutes.setSuffix(" 分钟")
-        if self.schedule:
-            self.advance_minutes.setValue(self.schedule.advance_minutes)
-        self.advance_minutes.valueChanged.connect(self._save_advance)
-        form3.addRow(self._label("提前提醒"), self.advance_minutes)
-        hint = QLabel("整体提前多少分钟进入上课状态与提醒（结束时间不变）")
-        hint.setObjectName("hint")
-        form3.addRow(self._label(""), hint)
-
-        self.countdown_sec = QSpinBox()
-        self.countdown_sec.setRange(5, 600)
-        self.countdown_sec.setSuffix(" 秒")
-        self.countdown_sec.setValue(
-            int(self.settings.get("island_countdown_sec", 60)))
-        self.countdown_sec.valueChanged.connect(self._save_countdown)
-        form3.addRow(self._label("倒计时时长"), self.countdown_sec)
-        hint_cd = QLabel("上课前最后多少秒展开蓝色倒计时")
-        hint_cd.setObjectName("hint")
-        form3.addRow(self._label(""), hint_cd)
-
-        self.time_offset = QSpinBox()
-        self.time_offset.setRange(-1800, 1800)
-        self.time_offset.setSuffix(" 秒")
-        if self.schedule:
-            self.time_offset.setValue(self.schedule.time_offset_seconds)
-        self.time_offset.valueChanged.connect(self._save_offset)
-        form3.addRow(self._label("时间偏移（负=提前）"), self.time_offset)
-        hint_off = QLabel("整体提前或延后上课时间，同时影响提醒与面板显示")
-        hint_off.setObjectName("hint")
-        form3.addRow(self._label(""), hint_off)
-
-        self._section(L, "测试")
-        test_row = QHBoxLayout()
-        test_row.addWidget(self._label("测试时长"))
-        self.test_seconds = QSpinBox()
-        self.test_seconds.setRange(3, 600)
-        self.test_seconds.setSuffix(" 秒")
-        self.test_seconds.setValue(
-            int(self.settings.get("island_countdown_sec", 60)))
-        test_row.addWidget(self.test_seconds)
-        btn_test = QPushButton("测试倒计时")
-        btn_test.clicked.connect(self._test_countdown)
-        btn_status = QPushButton("状态测试…")
-        btn_status.clicked.connect(self._open_status_test)
-        test_row.addWidget(btn_test)
-        test_row.addWidget(btn_status)
-        test_row.addStretch()
-        L.addLayout(test_row)
-        test_hint = QLabel(
-            "让灵动岛按上面“测试时长”强制演示一次（提前/偏移只影响真实触发时刻）")
-        test_hint.setObjectName("hint")
-        L.addWidget(test_hint)
-
-        self._section(L, "更新")
-        form_up = self._form(L)
-        self.check_update = QCheckBox("启动时检查更新")
-        self.check_update.setChecked(
-            bool(self.settings.get("check_update_on_start", True)))
-        self.check_update.toggled.connect(self._save_check_update)
-        form_up.addRow(self._label(""), self.check_update)
-        hint_up = QLabel("由独立更新器处理，可随时手动检查")
-        hint_up.setObjectName("hint")
-        form_up.addRow(self._label(""), hint_up)
-
-        self._section(L, "操作")
-        btn_row = QHBoxLayout()
-        btn_duty = QPushButton("编辑值日生")
-        btn_duty.clicked.connect(self._open_duty_editor)
-        btn_sched = QPushButton("编辑课表")
-        btn_sched.clicked.connect(self._open_course_editor)
-        btn_row.addWidget(btn_duty)
-        btn_row.addWidget(btn_sched)
-        btn_row.addStretch()
-        L.addLayout(btn_row)
-
-        btn_row2 = QHBoxLayout()
-        btn_holiday = QPushButton("假期与调休")
-        btn_holiday.clicked.connect(self._open_holidays)
-        btn_weekend = QPushButton("周末作息")
-        btn_weekend.clicked.connect(self._open_weekend)
-        btn_row2.addWidget(btn_holiday)
-        btn_row2.addWidget(btn_weekend)
-        btn_row2.addStretch()
-        L.addLayout(btn_row2)
-
-        L.addStretch()
-        return page
-
-    # ---------- 灵动岛页 ----------
-    def _page_island(self):
-        page = self._page("灵动岛")
-        L = page._inner_layout
-        form = self._form(L)
-
-        self.show_island = QCheckBox("显示灵动岛")
-        self.show_island.setChecked(bool(self.settings.get("show_island", True)))
-        self.show_island.toggled.connect(self._save_visibility)
-        form.addRow(self._label("显示"), self.show_island)
-
-        self.island_margin = QSpinBox()
-        self.island_margin.setRange(0, 100)
-        self.island_margin.setSuffix(" px")
-        self.island_margin.setValue(int(self.settings.get("island_top_margin")))
-        self.island_margin.valueChanged.connect(self._save_island)
-        form.addRow(self._label("距顶部距离"), self.island_margin)
-
-        self.island_alert_width = QSpinBox()
-        self.island_alert_width.setRange(200, 800)
-        self.island_alert_width.setSuffix(" px")
-        self.island_alert_width.setValue(int(self.settings.get("island_alert_width")))
-        self.island_alert_width.valueChanged.connect(self._save_island)
-        form.addRow(self._label("提醒宽度"), self.island_alert_width)
-
-        self.island_fullscreen_hide = QCheckBox("仅全屏时隐藏")
-        self.island_fullscreen_hide.setChecked(
-            bool(self.settings.get("island_hide_on_fullscreen")))
-        self.island_fullscreen_hide.toggled.connect(self._save_island)
-        form.addRow(self._label(""), self.island_fullscreen_hide)
-
-        self.island_wakeup_anim = QCheckBox("启用唤醒动画（圆圈 → 胶囊）")
-        self.island_wakeup_anim.setChecked(
-            bool(self.settings.get("island_show_wakeup_anim")))
-        self.island_wakeup_anim.toggled.connect(self._save_island)
-        form.addRow(self._label(""), self.island_wakeup_anim)
-
-        self._section(L, "副岛")
-        form_sub = self._form(L)
-        self.show_sub = QCheckBox("显示副岛（在主岛右侧）")
-        self.show_sub.setChecked(
-            bool(self.settings.get("show_sub_island", True)))
-        self.show_sub.toggled.connect(self._save_visibility)
-        form_sub.addRow(self._label("显示"), self.show_sub)
-
-        self.sub_collapsed = QCheckBox("默认收成圆形")
-        self.sub_collapsed.setChecked(
-            bool(self.settings.get("sub_island_collapsed", False)))
-        self.sub_collapsed.toggled.connect(self._save_subisland)
-        form_sub.addRow(self._label(""), self.sub_collapsed)
-
-        self.sub_auto = QSpinBox()
-        self.sub_auto.setRange(0, 120)
-        self.sub_auto.setSuffix(" 秒")
-        self.sub_auto.setValue(
-            int(self.settings.get("sub_island_auto_collapse_sec", 5)))
-        self.sub_auto.valueChanged.connect(self._save_subisland)
-        form_sub.addRow(self._label("无插件内容自动收起（0=不收起）"),
-                        self.sub_auto)
-
-        hint = QLabel("副岛内容由插件提供（如“天气”插件），可到对应插件页配置。")
-        hint.setObjectName("hint")
-        form_sub.addRow(self._label(""), hint)
-
-        L.addStretch()
-        return page
-
-    # ---------- 动画页 ----------
-    def _page_anim(self):
-        page = self._page("动画")
-        L = page._inner_layout
-        self._section(L, "渐显效果")
-        form = self._form(L)
-
-        self.fade_window = QCheckBox("窗口打开时渐显")
-        self.fade_window.setChecked(bool(self.settings.get("anim_fade_window")))
-        self.fade_window.toggled.connect(self._save_fade)
-        form.addRow(self._label(""), self.fade_window)
-
-        self.fade_panel = QCheckBox("面板展开时渐显")
-        self.fade_panel.setChecked(bool(self.settings.get("anim_fade_panel")))
-        self.fade_panel.toggled.connect(self._save_fade)
-        form.addRow(self._label(""), self.fade_panel)
-
-        self.fade_text = QCheckBox("文字变化时渐显")
-        self.fade_text.setChecked(bool(self.settings.get("anim_fade_text")))
-        self.fade_text.toggled.connect(self._save_fade)
-        form.addRow(self._label(""), self.fade_text)
-
-        self._section(L, "时长")
-        form2 = self._form(L)
-        self.anim_duration = QSpinBox()
-        self.anim_duration.setRange(100, 2000)
-        self.anim_duration.setSingleStep(50)
-        self.anim_duration.setSuffix(" ms")
-        self.anim_duration.setValue(int(self.settings.get("anim_duration")))
-        self.anim_duration.valueChanged.connect(self._save_fade)
-        form2.addRow(self._label("动画时长"), self.anim_duration)
-
-        hint = QLabel("同时作用于窗口打开、面板展开、文字变化。")
-        hint.setObjectName("hint")
-        form2.addRow(self._label(""), hint)
-
-        L.addStretch()
-        return page
-
-    # ---------- 插件页 ----------
-    def _page_plugins(self):
-        page = self._page("插件")
-        L = page._inner_layout
-        L.addWidget(self._label("已安装插件"))
-        self.plugin_list = QListWidget()
-        self.plugin_list.setObjectName("pluginList")
-        self.plugin_list.setMinimumHeight(220)
-        L.addWidget(self.plugin_list)
-
-        row = QHBoxLayout()
-        btn_add = QPushButton("＋ 添加插件...")
-        btn_add.clicked.connect(self._add_plugin)
-        btn_open = QPushButton("打开插件文件夹")
-        btn_open.clicked.connect(self._open_plugins_dir)
-        row.addWidget(btn_add)
-        row.addWidget(btn_open)
-        row.addStretch()
-        L.addLayout(row)
-
-        hint = QLabel("提示：添加插件后需重启程序生效。")
-        hint.setObjectName("hint")
-        L.addWidget(hint)
-        L.addStretch()
-        self._refresh_plugin_list()
-        return page
-
-    def _refresh_plugin_list(self):
-        self.plugin_list.clear()
-        if not self.plugin_manager:
-            self.plugin_list.addItem("（插件系统未启用）")
+    def _on_search(self, text):
+        q = text.strip().lower()
+        if not q:
+            self.results.hide()
+            self.nav_scroll.show()
             return
-        if not self.plugin_manager.loaded:
-            self.plugin_list.addItem("（暂无插件）")
+        self._search_hits = [e for e in self._search_index
+                             if q in e["text"]][:60]
+        self.results.clear()
+        if not self._search_hits:
+            it = QListWidgetItem("没有匹配的设置")
+            it.setFlags(Qt.NoItemFlags)
+            self.results.addItem(it)
+        else:
+            for i, e in enumerate(self._search_hits):
+                item = QListWidgetItem(f"{e['label']}    ·    "
+                                       f"{e['page']['title']}")
+                item.setData(Qt.UserRole, i)
+                self.results.addItem(item)
+        self.nav_scroll.hide()
+        self.results.show()
+        StaggerPlayer.fade(self.results, duration=160, delay=0)
+
+    def _on_result_clicked(self, item):
+        i = item.data(Qt.UserRole)
+        if i is None or not (0 <= i < len(self._search_hits)):
             return
-        for name, ok, msg in self.plugin_manager.loaded:
-            mark = "✓" if ok else "✗"
-            text = f"  {mark}  {name}"
-            if not ok:
-                text += f"    ({msg})"
-            self.plugin_list.addItem(text)
+        e = self._search_hits[i]
+        self._goto(e)
 
-    def _add_plugin(self):
-        from PySide6.QtWidgets import QFileDialog
-        import shutil
-        path, _ = QFileDialog.getOpenFileName(
-            self, "选择插件文件", "",
-            "Class Daily Land 插件 (*.cdlplugin);;所有文件 (*)")
-        if not path:
+    def _goto(self, entry):
+        page = entry["page"]
+        self._select(page["index"])
+        widget = entry["widget"]
+        if widget is None:
             return
-        plugins_dir = getattr(self.plugin_manager, 'plugins_dir', None) \
-            if self.plugin_manager else None
-        if not plugins_dir:
-            QMessageBox.warning(self, "提示", "插件目录不可用")
-            return
-        target = os.path.join(plugins_dir, os.path.basename(path))
-        try:
-            shutil.copy(path, target)
-        except Exception as e:
-            QMessageBox.critical(self, "导入失败", f"复制失败：{e}")
-            return
-        QMessageBox.information(self, "已导入",
-                                f"{os.path.basename(path)} 已导入，重启后生效。")
 
-    def _open_plugins_dir(self):
-        plugins_dir = getattr(self.plugin_manager, 'plugins_dir', None) \
-            if self.plugin_manager else None
-        if not plugins_dir or not os.path.isdir(plugins_dir):
-            QMessageBox.warning(self, "提示", "插件目录不存在")
-            return
-        os.startfile(plugins_dir)
+        def _scroll():
+            try:
+                inner = page["widget"]._inner
+                y = widget.mapTo(inner, QPoint(0, 0)).y()
+                bar = page["widget"]._scroll.verticalScrollBar()
+                bar.setValue(max(0, y - 24))
+                if isinstance(widget, RowWidget):
+                    widget.flash()
+            except RuntimeError:
+                pass
 
-    # ---------- 关于页 ----------
-    def _page_about(self):
-        page = self._page("关于")
-        L = page._inner_layout
-        from about import get_version
-        version = get_version()
+        QTimer.singleShot(80, self, _scroll)
 
-        title = QLabel("Class Daily Land")
-        f = QFont("Microsoft YaHei UI")
-        f.setPixelSize(26)
-        f.setBold(True)
-        title.setFont(f)
-        L.addWidget(title)
+    # ==================================================
+    # 设置写入（存得妥妥的）
+    # ==================================================
+    def on_row_change(self, row_widget):
+        if row_widget.row.key == "theme_mode":
+            return                      # 主题由 setter 单独处理
+        self._apply()
 
-        ver = QLabel(f"v{version}")
-        ver.setStyleSheet("color:#888; font-size:14px;")
-        L.addWidget(ver)
-
-        L.addSpacing(12)
-        desc = QLabel("一个轻量级的班级日常管理工具")
-        desc.setStyleSheet("color:#555; font-size:13px;")
-        L.addWidget(desc)
-
-        L.addSpacing(16)
-        info = QLabel("作者: LCHXXXX、hexwisp72\n反馈: 2352240265@qq.com")
-        info.setStyleSheet("color:#555; font-size:13px;")
-        L.addWidget(info)
-
-        L.addSpacing(24)
-        btn = QPushButton("检查更新")
-        btn.setObjectName("primary")
-        btn.clicked.connect(self._open_updater)
-        L.addWidget(btn, alignment=Qt.AlignLeft)
-        L.addStretch()
-        return page
-
-    # ---------- 更新（委托给 Launcher） ----------
-    def _open_updater(self):
-        from launch_updater import launch_visible
-        ok, msg = launch_visible()
-        if not ok:
-            QMessageBox.warning(self, "更新", msg)
-
-    # ---------- 即时保存 ----------
     def _apply(self):
-        self.settings.save()
-        if self.controller is not None:
-            self.controller.apply_settings()
-        elif self.on_apply:
-            self.on_apply()
-
-    def _save_visibility(self, *_):
-        self.settings["show_main_window"] = bool(self.show_main.isChecked())
-        self.settings["show_island"] = bool(self.show_island.isChecked())
-        self.settings["show_sub_island"] = bool(self.show_sub.isChecked())
-        self._apply()
-
-    def _update_opacity_label(self, v):
-        self.opacity_label.setText(f"{int(v)}%")
-
-    def _save_opacity(self, v):
-        self._update_opacity_label(v)
-        self.settings["main_opacity"] = float(v) / 100.0
-        self._apply()
-
-    @staticmethod
-    def _parse_float(text):
-        text = (text or '').strip()
-        if not text:
-            return None
         try:
-            return float(text)
-        except ValueError:
-            return None
+            self.settings.save()
+        except Exception:
+            pass
+        if self.controller is not None:
+            try:
+                self.controller.apply_settings()
+            except Exception:
+                pass
+        elif self.on_apply is not None:
+            try:
+                self.on_apply()
+            except Exception:
+                pass
 
-    def _save_subisland(self, *_):
-        s = self.settings
-        s["show_sub_island"] = bool(self.show_sub.isChecked())
-        s["sub_island_collapsed"] = bool(self.sub_collapsed.isChecked())
-        s["sub_island_auto_collapse_sec"] = int(self.sub_auto.value())
+    def _set_theme(self, value):
+        self.settings["theme_mode"] = str(value)
         self._apply()
+        app = QApplication.instance()
+        if app is not None:
+            theme.apply_theme(app)
 
-    def _save_width(self, v):
-        self.settings["main_width_ratio"] = float(v)
+    # ==================================================
+    # Windows 11 云母材质（可开关）
+    # ==================================================
+    def _set_mica(self, value):
+        """开关云母材质：即时应用。
+
+        WA_TranslucentBackground 在窗口显示后切换需要重建原生窗口才能生效，
+        这里就偷偷翻转一个窗口标志，强制它重建。
+        """
+        value = bool(value)
+        self.settings["settings_mica"] = value
+        want = bool(value and self.win11)
+        if want == self._mica_active:
+            return
+
+        was_visible = self.isVisible()
+        if was_visible:
+            self.hide()
+
+        self.setAttribute(Qt.WA_TranslucentBackground, want)
+        self._mica_active = bool(want)
+        # 强制重建原生窗口，透明属性才会生效
+        flags = self.windowFlags()
+        self.setWindowFlags(flags ^ Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(flags)
+
+        ok = False
+        if want:
+            ok = apply_window_material(self, mica=True, dark=theme.is_dark())
+            if not ok:
+                # 材质失败时回退成不透明窗口，避免显示异常
+                self._mica_active = False
+                self.setAttribute(Qt.WA_TranslucentBackground, False)
+                disable_mica(self)
+                self.win11 = False
+                flags = self.windowFlags()
+                self.setWindowFlags(flags ^ Qt.WindowStaysOnTopHint)
+                self.setWindowFlags(flags)
+        else:
+            disable_mica(self)
+
+        if was_visible:
+            self.show()
+        self._apply_qss()
+        self._repolish(self)
+        self._flash_hint("云母材质已开启" if self._mica_active
+                         else "云母材质已关闭")
+
+    # ==================================================
+    # 恢复默认
+    # ==================================================
+    def _reset_current_page(self):
+        idx = self.stack.currentIndex()
+        if not (0 <= idx < len(self.pages)):
+            return
+        page = self.pages[idx]
+        changed = False
+        for rw in self._page_rows(page):
+            changed = rw.load_default() or changed
+        if changed:
+            self._apply()
+            self._play_page(page)
+            self._flash_hint("本页已恢复默认值")
+
+    def _reset_all(self):
+        if QMessageBox.question(
+                self, "恢复默认",
+                "确定要把所有设置恢复成默认值吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No) != QMessageBox.Yes:
+            return
+        for rw in self.rows:
+            rw.load_default()
         self._apply()
+        self._flash_hint("已全部恢复默认值")
 
-    def _save_font(self, v):
-        self.settings["main_font_size"] = int(v)
-        self._apply()
+    def _flash_hint(self, text):
+        self.saved_hint.setText(text)
+        QTimer.singleShot(2500, self,
+                          lambda: self.saved_hint.setText("改动即时保存生效"))
 
-    def _save_auto_scroll(self, v):
-        self.settings["main_auto_scroll"] = bool(v)
-        self._apply()
-
-    def _save_scroll(self, *_):
-        self.settings["main_scroll_interval"] = int(self.scroll_interval.value())
-        self.settings["main_scroll_step"] = int(self.scroll_step.value())
-        self.settings["main_scroll_pause"] = int(self.scroll_pause.value())
-        self._apply()
-
-    def _save_advance(self, v):
-        if self.schedule:
-            self.schedule.set_advance_minutes(int(v))
-
-    def _save_countdown(self, v):
-        self.settings["island_countdown_sec"] = int(v)
-        self._apply()
-
-    def _save_offset(self, v):
-        if self.schedule:
-            self.schedule.set_time_offset_seconds(int(v))
-            self._notify_island()
-
-    def _save_check_update(self, v):
-        self.settings["check_update_on_start"] = bool(v)
-        self._apply()
-
-    def _save_island(self, *_):
-        self.settings["island_top_margin"] = int(self.island_margin.value())
-        self.settings["island_alert_width"] = int(self.island_alert_width.value())
-        self.settings["island_hide_on_fullscreen"] = bool(
-            self.island_fullscreen_hide.isChecked())
-        self.settings["island_show_wakeup_anim"] = bool(
-            self.island_wakeup_anim.isChecked())
-        self._apply()
-
-    def _save_fade(self, *_):
-        self.settings["anim_fade_window"] = bool(self.fade_window.isChecked())
-        self.settings["anim_fade_panel"] = bool(self.fade_panel.isChecked())
-        self.settings["anim_fade_text"] = bool(self.fade_text.isChecked())
-        self.settings["anim_duration"] = int(self.anim_duration.value())
-        self._apply()
-
-    def _open_duty_editor(self):
+    # ==================================================
+    # 操作按钮（都通向好东西）
+    # ==================================================
+    def _open_duty(self):
         if self.controller is not None and self.controller.window is not None:
             self.controller.window.edit_duty()
 
-    def _open_course_editor(self):
-        if not self.schedule:
+    def _open_course(self):
+        if self.schedule is None:
             return
         import menu as menu_mod
         dlg = menu_mod.CourseEditor(self.schedule, self)
@@ -737,182 +779,138 @@ class SettingsDialog(QDialog):
             self._notify_island()
 
     def _open_holidays(self):
-        if not self.schedule:
+        if self.schedule is None:
             return
         import menu as menu_mod
-        dlg = menu_mod.HolidayDialog(self.schedule, self)
-        dlg.exec()
+        menu_mod.HolidayDialog(self.schedule, self).exec()
         self._notify_island()
 
     def _open_weekend(self):
-        if not self.schedule:
+        if self.schedule is None:
             return
         import menu as menu_mod
-        dlg = menu_mod.WeekendScheduleDialog(self.schedule, self)
+        menu_mod.WeekendScheduleDialog(self.schedule, self).exec()
+        self._notify_island()
+
+    def _open_timetable_manager(self):
+        if self.schedule is None:
+            return
+        import menu as menu_mod
+        dlg = menu_mod.TimetableManagerDialog(
+            self.schedule, on_change=self._notify_island, parent=self)
         dlg.exec()
         self._notify_island()
 
     def _test_countdown(self):
-        island = getattr(self.controller, 'island', None) \
-            if self.controller is not None else None
-        if island is None:
-            QMessageBox.information(self, "提示", "灵动岛不可用，无法演示。")
+        if self.controller is None:
+            QMessageBox.information(self, "提醒一下", "灵动岛当前不可用，无法演示。")
             return
-        self.controller.test_countdown(int(self.test_seconds.value()))
+        self.controller.test_countdown(int(self._test_seconds))
 
     def _open_status_test(self):
-        if not self.schedule:
+        if self.schedule is None:
             return
         from test_dialog import StatusTestDialog
-        dlg = StatusTestDialog(self.schedule, self.settings,
-                               self.controller, self)
-        dlg.exec()
+        StatusTestDialog(self.schedule, self.settings, self.controller,
+                         self).exec()
+
+    def _import_plugin(self):
+        if self.plugin_manager is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择插件文件", "",
+            f"{APP_NAME} 插件 (*.cblplugin);;所有文件 (*)")
+        if not path:
+            return
+        import shutil
+        target = os.path.join(self.plugin_manager.plugins_dir,
+                              os.path.basename(path))
+        try:
+            shutil.copy(path, target)
+        except Exception as e:
+            QMessageBox.critical(self, "导入失败", f"复制文件失败：{e}")
+            return
+        QMessageBox.information(self, "安装完成",
+                                f"{os.path.basename(path)} 已安装，重启后生效。")
+
+    def _open_plugins_dir(self):
+        if self.plugin_manager is None:
+            return
+        d = self.plugin_manager.plugins_dir
+        if os.path.isdir(d):
+            os.startfile(d)
+
+    def _open_config_dir(self):
+        d = os.path.dirname(self.settings.path)
+        if os.path.isdir(d):
+            os.startfile(d)
+
+    def _open_updater(self):
+        from launch_updater import launch_visible
+        ok, msg = launch_visible()
+        if not ok:
+            QMessageBox.warning(self, "更新", msg)
 
     def _notify_island(self):
         if self.controller is not None:
             self.controller.notify_island_dirty()
 
-    # ---------- 打开动画 ----------
+    def _local_plugins_text(self):
+        if self.plugin_manager is None:
+            return "（插件系统还没启用）"
+        loaded = list(getattr(self.plugin_manager, "loaded", []) or [])
+        if not loaded:
+            return "（没有任何插件）"
+        lines = []
+        for name, ok, msg in loaded:
+            mark = "✓" if ok else "✗"
+            lines.append(f"{mark}  {name}    {msg}")
+        return "\n".join(lines)
+
+    # ==================================================
+    # 入场 / 关闭（漂亮的登场和退场）
+    # ==================================================
     def showEvent(self, event):
+        if not self._opened and not self._mica_active:
+            self.setWindowOpacity(0.0)
         super().showEvent(event)
+        if self._mica_active:
+            # 窗口句柄此时已建立，应用云母背板 + 圆角 + 标题栏明暗
+            ok = apply_window_material(self, mica=True, dark=theme.is_dark())
+            self._last_material_ok = ok
+            if not ok:
+                # 系统不支持 / 关了透明效果：回退成不透明窗口，免得透视出乱子
+                self._mica_active = False
+                self.setAttribute(Qt.WA_TranslucentBackground, False)
+                disable_mica(self)
+                self.setWindowOpacity(1.0)
+                self._apply_qss()
         if not self._opened:
             self._opened = True
-            QTimer.singleShot(40, self._play_open_anims)
+            QTimer.singleShot(30, self, self._play_open)
 
-    def _play_open_anims(self):
-        self._animate_sidebar_in()
-        self._animate_page_in(self.stack.currentWidget(), first=True)
+    def _play_open(self):
+        # 开启云母时不做整窗透明度动画（分层窗口上会闪黑）
+        if not self._mica_active:
+            self._fade_window()
+        # 导航逐条淡入 + 首页卡片错峰淡入
+        StaggerPlayer(duration=210, step=40, delay=120).play(self.nav.items())
+        if self.pages:
+            QTimer.singleShot(80, self,
+                              lambda: self._play_page(self.pages[0]))
 
-    def _animate_sidebar_in(self):
-        # 导航按钮逐条淡入
-        for i, btn in enumerate(self._nav_buttons):
-            eff = btn.graphicsEffect()
-            eff.setOpacity(0.0)
-            QTimer.singleShot(i * 55,
-                              lambda e=eff: self._fade_effect(e))
-
-    def _fade_effect(self, eff):
-        a = QPropertyAnimation(eff, b"opacity", eff)
-        a.setDuration(740)
+    def _fade_window(self):
+        a = QPropertyAnimation(self, b"windowOpacity", self)
+        a.setDuration(160)
         a.setStartValue(0.0)
         a.setEndValue(1.0)
-        a.setEasingCurve(QEasingCurve.OutQuint)
+        a.setEasingCurve(QEasingCurve.OutCubic)
         a.start(QAbstractAnimation.DeleteWhenStopped)
 
-    @staticmethod
-    def _flatten_layout(layout):
-        out = []
-        for i in range(layout.count()):
-            item = layout.itemAt(i)
-            w = item.widget()
-            if w is not None:
-                out.append(w)
-            else:
-                sub = item.layout()
-                if sub is not None:
-                    out.extend(SettingsDialog._flatten_layout(sub))
-        return out
-
-    @staticmethod
-    def _collect_units(layout):
-        """按视觉顺序收集“动画单元”：每个表单行(标签+字段)为一个单元。"""
-        units = []
-        for i in range(layout.count()):
-            item = layout.itemAt(i)
-            w = item.widget()
-            if w is not None:
-                units.append([w])
-                continue
-            sub = item.layout()
-            if sub is None:
-                continue
-            if isinstance(sub, QFormLayout):
-                for row in range(sub.rowCount()):
-                    grp = []
-                    for role in (QFormLayout.ItemRole.LabelRole,
-                                 QFormLayout.ItemRole.FieldRole):
-                        it = sub.itemAt(row, role)
-                        if it is None:
-                            continue
-                        sw = it.widget()
-                        if sw is not None:
-                            grp.append(sw)
-                        else:
-                            sl = it.layout()
-                            if sl is not None:
-                                grp.extend(
-                                    SettingsDialog._flatten_layout(sl))
-                    if grp:
-                        units.append(grp)
-            else:
-                units.extend(SettingsDialog._collect_units(sub))
-        return units
-
-    def _animate_page_in(self, page, first=False):
-        if page is None:
-            return
-        inner = getattr(page, '_inner_layout', None)
-        if inner is None:
-            return
-        units = self._collect_units(inner)
-        if not units:
-            return
-        delay_base = 60 if first else 110
-        step = 70
-        title = getattr(page, '_title_label', None)
-        divider = getattr(page, '_divider', None)
-        for k, unit in enumerate(units):
-            delay = delay_base + k * step
-            for w in unit:
-                eff = w.graphicsEffect()
-                if not isinstance(eff, QGraphicsOpacityEffect):
-                    eff = QGraphicsOpacityEffect(w)
-                    w.setGraphicsEffect(eff)
-                eff.setOpacity(0.0)
-                if w is title:
-                    QTimer.singleShot(
-                        delay, lambda ww=w, e=eff:
-                        self._slide_in(ww, e, -34))
-                elif w is divider:
-                    QTimer.singleShot(
-                        delay, lambda ww=w, e=eff:
-                        self._draw_divider(ww, e))
-                else:
-                    QTimer.singleShot(
-                        delay, lambda ww=w, e=eff: self._fade_in(ww, e))
-
-    def _slide_in(self, widget, eff, dx=-28):
-        """标题从左侧滑入 + 淡入。"""
-        end = widget.pos()
-        widget.move(end.x() + dx, end.y())
-        a_pos = QPropertyAnimation(widget, b"pos", widget)
-        a_pos.setDuration(1120)
-        a_pos.setStartValue(widget.pos())
-        a_pos.setEndValue(end)
-        a_pos.setEasingCurve(QEasingCurve.OutQuint)
-        a_pos.start(QAbstractAnimation.DeleteWhenStopped)
-        self._fade_in(widget, eff)
-
-    def _draw_divider(self, divider, eff):
-        """分隔线从左向右拉开 + 淡入。"""
-        try:
-            end = max(60, divider.parentWidget().width())
-        except Exception:
-            end = 400
-        divider.setMaximumWidth(0)
-        a = QPropertyAnimation(divider, b"maximumWidth", divider)
-        a.setDuration(860)
-        a.setStartValue(0)
-        a.setEndValue(end)
-        a.setEasingCurve(QEasingCurve.OutQuint)
-        a.finished.connect(lambda: divider.setMaximumWidth(16777215))
-        a.start(QAbstractAnimation.DeleteWhenStopped)
-        self._fade_in(divider, eff)
-
-    def _fade_in(self, widget, eff):
-        a = QPropertyAnimation(eff, b"opacity", widget)
-        a.setDuration(780)
-        a.setStartValue(0.0)
-        a.setEndValue(1.0)
-        a.setEasingCurve(QEasingCurve.OutQuint)
-        a.start(QAbstractAnimation.DeleteWhenStopped)
+    def closeEvent(self, event):
+        if self.market_page is not None:
+            try:
+                self.market_page.shutdown()
+            except Exception:
+                pass
+        super().closeEvent(event)

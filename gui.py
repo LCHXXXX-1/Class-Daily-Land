@@ -4,16 +4,23 @@ import json
 from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QMenu,
                                QApplication, QMessageBox,
                                QScrollArea, QFrame)
-from PySide6.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve)
+from PySide6.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve,
+                            QEvent)
 from PySide6.QtGui import QShortcut, QKeySequence
 
 from StudentOnDuty import StudentOnDuty
 from homework import HomeworkManager
 from utils import set_window_icon
+from ui_common import setup_touch_scroll
+from storage import update_json
+import theme
 import menu as menu_mod
 
+# 手指自己滑过主面板后，自动滚动让位多久（毫秒）
+MANUAL_SCROLL_HOLD_MS = 4000
 
-class ClassDailyLandApp(QWidget):
+
+class ClassBoardApp(QWidget):
     def __init__(self, config_dir, config_file, schedule_manager, settings,
                  plugin_manager=None, controller=None):
         super().__init__()
@@ -25,13 +32,14 @@ class ClassDailyLandApp(QWidget):
         self.controller = controller
         self._scroll_dir = 1
         self._scroll_pause = 0
+        self._scroll_acc = 0.0
         self._opened_animated = False
         self._fade_anim = None
         self._target_opacity = float(self.settings.get("main_opacity", 1.0))
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool)
         set_window_icon(self)
-        self.setStyleSheet("ClassDailyLandApp { background-color: white; }")
+        theme.theme_changed_connect(self._apply_theme)
 
         self.duty_manager = StudentOnDuty()
         self.homework_manager = HomeworkManager()
@@ -42,7 +50,7 @@ class ClassDailyLandApp(QWidget):
         self.screen_height = screen.height()
 
         self._build_ui()
-        self.update_display()
+        self._apply_theme()
 
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_menu)
@@ -71,17 +79,8 @@ class ClassDailyLandApp(QWidget):
             self.save_config()
 
     def save_config(self):
-        data = {}
-        if os.path.exists(self.config_file):
-            try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            except Exception:
-                data = {}
-        data['should'] = self.should
-        data['actual'] = self.actual
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # 原子写（临时文件 + os.replace），避免崩溃损坏 config.json
+        update_json(self.config_file, should=self.should, actual=self.actual)
         self.settings["main_font_size"] = self.font_size
         self.settings.save()
 
@@ -106,10 +105,8 @@ class ClassDailyLandApp(QWidget):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setStyleSheet("QScrollArea { background: white; border: none; }")
 
         self.homework_container = QWidget()
-        self.homework_container.setStyleSheet("background: white;")
         self.homework_layout = QVBoxLayout(self.homework_container)
         self.homework_layout.setContentsMargins(0, 0, 0, 0)
         self.homework_layout.setSpacing(2)
@@ -117,6 +114,10 @@ class ClassDailyLandApp(QWidget):
         self.scroll.setWidget(self.homework_container)
 
         self.main_layout.addWidget(self.scroll)
+
+        # 触屏：手指拖拽 + 惯性滑动（这儿没有滚轮，拖是唯一的滚动方式）
+        setup_touch_scroll(self.scroll, mouse_drag=True)
+        self.scroll.viewport().installEventFilter(self)
 
         self._auto_scroll_timer = QTimer(self)
         self._auto_scroll_timer.setInterval(
@@ -131,23 +132,34 @@ class ClassDailyLandApp(QWidget):
             if w is not None:
                 w.deleteLater()
 
+    # ================= 主题 =================
+    def _apply_theme(self):
+        """按当前主题刷新窗口背景与文字颜色（theme watcher 回调）。"""
+        bg = theme.color("window_bg")
+        self.setStyleSheet(f"ClassBoardApp {{ background-color: {bg}; }}")
+        self.scroll.setStyleSheet(
+            f"QScrollArea {{ background: {bg}; border: none; }}")
+        self.homework_container.setStyleSheet(f"background: {bg};")
+        self.update_display()
+
     # ================= 显示 =================
     def update_display(self):
         fs = self.font_size
+        fg = theme.color("text")
         self.title_label.setStyleSheet(
-            f"font-size: {fs + 4}px; font-weight: bold; color: black;")
-        self.duty_label.setStyleSheet(f"font-size: {fs}px; color: black;")
-        self.att_label.setStyleSheet(f"font-size: {fs}px; color: black;")
+            f"font-size: {fs + 4}px; font-weight: bold; color: {fg};")
+        self.duty_label.setStyleSheet(f"font-size: {fs}px; color: {fg};")
+        self.att_label.setStyleSheet(f"font-size: {fs}px; color: {fg};")
 
-        self.duty_label.setText(f"值日生：{self.duty_manager.get_current_duty()}")
-        self.att_label.setText(f"应到：{self.should}    实到：{self.actual}")
+        self.duty_label.setText(f"今日值日生：{self.duty_manager.get_current_duty()}")
+        self.att_label.setText(f"应到 {self.should} 人 · 实到 {self.actual} 人")
 
         self._clear_layout(self.homework_layout)
 
         grouped = self.homework_manager.get_grouped_homework()
         if not grouped:
-            lbl = QLabel("无作业")
-            lbl.setStyleSheet(f"font-size: {fs}px; color: black;")
+            lbl = QLabel("暂无作业")
+            lbl.setStyleSheet(f"font-size: {fs}px; color: {fg};")
             lbl.setWordWrap(True)
             self.homework_layout.addWidget(lbl)
         else:
@@ -158,14 +170,14 @@ class ClassDailyLandApp(QWidget):
                     title += f" ({date.strip()})"
                 hdr = QLabel(title)
                 hdr.setStyleSheet(
-                    f"font-size: {fs}px; font-weight: bold; color: black;")
+                    f"font-size: {fs}px; font-weight: bold; color: {fg};")
                 hdr.setWordWrap(True)
                 self.homework_layout.addWidget(hdr)
 
                 for idx, content in enumerate(data['contents'], 1):
                     item = QLabel(f"  {idx}. {content}")
                     item.setWordWrap(True)
-                    item.setStyleSheet(f"font-size: {fs}px; color: black;")
+                    item.setStyleSheet(f"font-size: {fs}px; color: {fg};")
                     self.homework_layout.addWidget(item)
 
         self._adjust_window()
@@ -206,6 +218,7 @@ class ClassDailyLandApp(QWidget):
             self._auto_scroll_timer.stop()
             self._scroll_dir = 1
             self._scroll_pause = 0
+            self._scroll_acc = 0.0
             self.scroll.verticalScrollBar().setValue(0)
             return
         bar = self.scroll.verticalScrollBar()
@@ -213,6 +226,7 @@ class ClassDailyLandApp(QWidget):
             if not self._auto_scroll_timer.isActive():
                 self._scroll_dir = 1
                 self._scroll_pause = 0
+                self._scroll_acc = 0.0
                 bar.setValue(0)
                 self._auto_scroll_timer.setInterval(
                     int(self.settings.get("main_scroll_interval", 50)))
@@ -221,6 +235,7 @@ class ClassDailyLandApp(QWidget):
             self._auto_scroll_timer.stop()
             self._scroll_dir = 1
             self._scroll_pause = 0
+            self._scroll_acc = 0.0
             bar.setValue(0)
 
     def _calc_content_height(self, avail_width):
@@ -248,20 +263,46 @@ class ClassDailyLandApp(QWidget):
         if self._scroll_pause > 0:
             self._scroll_pause -= 1
             return
-        step = int(self.settings.get("main_scroll_step", 1))
+        try:
+            step = float(self.settings.get("main_scroll_step", 1))
+        except (TypeError, ValueError):
+            step = 1.0
         pause = int(self.settings.get("main_scroll_pause", 60))
+        # 浮点累积：低速滚动时不再整像素顿感
+        self._scroll_acc += step
+        iv = int(self._scroll_acc)
+        if iv < 1:
+            return
+        self._scroll_acc -= iv
         if self._scroll_dir == 1:
-            if bar.value() >= bar.maximum():
+            if bar.value() + iv >= bar.maximum():
+                bar.setValue(bar.maximum())
                 self._scroll_pause = pause
                 self._scroll_dir = -1
             else:
-                bar.setValue(bar.value() + step)
+                bar.setValue(bar.value() + iv)
         else:
-            if bar.value() <= 0:
+            if bar.value() - iv <= 0:
+                bar.setValue(0)
                 self._scroll_pause = pause
                 self._scroll_dir = 1
             else:
-                bar.setValue(bar.value() - step)
+                bar.setValue(bar.value() - iv)
+
+    # ================= 触屏 / 滚轮：手动滑动优先 =================
+    def eventFilter(self, obj, event):
+        if obj is self.scroll.viewport() and event.type() in (
+                QEvent.Wheel, QEvent.MouseButtonPress, QEvent.TouchBegin):
+            self._pause_auto_scroll()
+        return super().eventFilter(obj, event)
+
+    def _pause_auto_scroll(self):
+        """用户自己滑过之后，自动滚动先停几秒，别和手指抢画面。"""
+        timer = self._auto_scroll_timer
+        if timer is None or not timer.isActive():
+            return
+        ticks = int(MANUAL_SCROLL_HOLD_MS / max(1, timer.interval()))
+        self._scroll_pause = max(self._scroll_pause, max(1, ticks))
 
     # ================= 打开动画 =================
     def showEvent(self, event):
@@ -296,10 +337,10 @@ class ClassDailyLandApp(QWidget):
     # ================= 右键菜单 =================
     def _show_menu(self, pos):
         m = QMenu(self)
-        m.addAction("上一个值日生", self.previous_duty)
-        m.addAction("下一个值日生", self.next_duty)
+        m.addAction("上一位值日生", self.previous_duty)
+        m.addAction("下一位值日生", self.next_duty)
         m.addSeparator()
-        m.addAction("修改出勤", self.modify_attendance)
+        m.addAction("出勤人数", self.modify_attendance)
         m.addSeparator()
         m.addAction("编辑作业", self.edit_homework)
         m.addSeparator()
@@ -311,7 +352,7 @@ class ClassDailyLandApp(QWidget):
         m.addSeparator()
         m.addAction("设置", self.open_settings)
         m.addSeparator()
-        m.addAction("随机功能", self.open_randoms)
+        m.addAction("随机点名", self.open_randoms)
         m.addSeparator()
         m.addAction("退出", self._exit_app)
         m.exec(self.mapToGlobal(pos))
@@ -361,15 +402,42 @@ class ClassDailyLandApp(QWidget):
         self._notify_island()
 
     def open_settings(self):
-        from settings_dialog import SettingsDialog
+        # 设置界面 V4（1:1 Win11 设置：二级导航 + 内嵌课表/作业编辑）
+        # 回退旧版：改回 settings_dialog_v3 / v2 / settings_dialog
+        # 单例：已打开则激活已有窗口，避免从托盘/右键菜单重复打开无数个
+        existing = getattr(self, "_settings_dlg", None)
+        if existing is not None:
+            try:
+                existing.showNormal()
+                existing.raise_()
+                existing.activateWindow()
+                return
+            except RuntimeError:
+                self._settings_dlg = None
+        from settings_dialog_v4 import SettingsDialog
+        # 副岛（或主岛）→ 设置窗口的形变过渡起点
+        morph_rect = None
+        try:
+            sub = getattr(self.controller, "sub_island", None)
+            island = getattr(self.controller, "island", None)
+            if sub is not None and sub.isVisible():
+                morph_rect = sub.frameGeometry()
+            elif island is not None and island.isVisible():
+                morph_rect = island.frameGeometry()
+        except Exception:
+            morph_rect = None
         dlg = SettingsDialog(
             self.settings,
             schedule_manager=self.schedule_manager,
             plugin_manager=self.plugin_manager,
             controller=self.controller,
             parent=self,
+            morph_from=morph_rect,
         )
+        self._settings_dlg = dlg
         dlg.exec()
+        self._settings_dlg = None
+        dlg.deleteLater()
 
     def apply_main_settings(self):
         self.font_size = int(self.settings.get("main_font_size", 14))

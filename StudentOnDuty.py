@@ -55,7 +55,7 @@ class StudentOnDuty:
             self.save_current_index()
 
     def get_current_duty(self):
-        return self.duty_list[self.current_index] if self.duty_list else "无"
+        return self.duty_list[self.current_index] if self.duty_list else "今天没人值日哦"
 
     def next_duty(self):
         if not self.duty_list:

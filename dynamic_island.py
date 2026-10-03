@@ -6,11 +6,11 @@ from ctypes import wintypes
 from datetime import datetime, timedelta
 
 from PySide6.QtWidgets import QWidget, QMenu, QApplication
-from PySide6.QtCore import (Qt, QTimer, QRect, QRectF, QPoint, QPointF,
+from PySide6.QtCore import (Qt, QTimer, QRect, QRectF, QPointF,
                             QPropertyAnimation, QEasingCurve, QEvent,
                             QElapsedTimer)
 from PySide6.QtGui import (QPainter, QColor, QPainterPath, QFont, QPen,
-                           QLinearGradient)
+                           QLinearGradient, QCursor, QFontMetricsF)
 
 from panel_window import PanelWindow, FadeMask
 
@@ -125,6 +125,16 @@ class DynamicIsland(QWidget):
     COUNTDOWN_W = 600
     MINI_W = 48
 
+    # 紧急警报条（地震等）：主岛 + 副岛融合成一条
+    BANNER_MIN_W = 420
+    BANNER_MAX_W = 700
+    BANNER_TICK_MS = 33       # ~30fps，倒计时条平滑收缩
+    BANNER_HOLD_SEC = 30      # 激活期间不断续期 → 全屏/PPT 也不会被隐藏
+    BANNER_FADE_MS = 140
+    BANNER_RADIUS = 20        # 二层展开时的圆角（避免过度圆润）
+    BANNER_TIPS_H = 32        # 第二层（避险要诀）高度
+    BANNER_TIPS_FADE_MS = 180
+
     # 面板约束
     PANEL_GAP = 4
     PANEL_STAGGER = 70
@@ -143,6 +153,11 @@ class DynamicIsland(QWidget):
     WATCH_INTERVAL = 400
     TEXT_ROLL_MS = 140
     FILL_MS = 180            # 进度条填充时长
+    # 胶囊文字过长时的跑马灯滚动
+    MARQUEE_MS = 33          # ~30fps，只在文字溢出时运行
+    MARQUEE_SPEED = 32.0     # 滚动速度 px/s
+    MARQUEE_PAUSE_S = 0.9    # 每轮回起点先停一下再滚
+    MARQUEE_GAP = 40.0       # 首尾间隔（无缝循环时的空白）
     PANEL_FADE_MS = 160      # 面板内容淡入时长
     PULL_HOLD_MS = 3000      # 下拉后停留 3 秒自动收回
     SHEEN_CYCLE_MS = 1400    # 蓝条流光扫过一轮
@@ -196,7 +211,7 @@ class DynamicIsland(QWidget):
         self._anim_clock = QElapsedTimer()
         self._anim_clock.start()
         self._countdown_timer = QTimer(self)
-        self._countdown_timer.setInterval(16)
+        self._countdown_timer.setInterval(33)   # 30fps 足够流畅且省 CPU
         self._countdown_timer.setTimerType(Qt.PreciseTimer)
         self._countdown_timer.timeout.connect(self.update)
 
@@ -208,8 +223,17 @@ class DynamicIsland(QWidget):
         self._extra_timer.setTimerType(Qt.PreciseTimer)
         self._extra_timer.timeout.connect(self.update)
 
+        # 胶囊文字跑马灯（文字溢出时滚动）
+        self._marquee_text = ""
+        self._marquee_clock = QElapsedTimer()
+        self._marquee_timer = QTimer(self)
+        self._marquee_timer.setInterval(self.MARQUEE_MS)
+        self._marquee_timer.setTimerType(Qt.PreciseTimer)
+        self._marquee_timer.timeout.connect(self.update)
+
         # 下拉
         self._pulled = False
+        self._pull_generation = 0   # 每次下拉/收起自增，使延迟回调可校验作废
         self._panels = []
         self._panel_rects = []
         self._scroll_offset = 0
@@ -219,6 +243,20 @@ class DynamicIsland(QWidget):
         # 提醒
         self._alert_text = ""
         self._alert_is_end = False
+        self._alert_id = 0          # 每条提醒自增，防止旧 hold 定时器误收新提醒
+        self._alert_clock = QElapsedTimer()
+        self._force_until = 0.0     # >0 表示强制显示中（紧急预警期间不被隐藏）
+
+        # 紧急警报条（地震等）：卡片式独占显示，副岛随之隐藏
+        self._banner_spec = None
+        self._banner_clock = QElapsedTimer()
+        self._banner_mono = 0.0          # 进入警报条的时刻（monotonic）
+        self._banner_confirm_mono = 0.0  # 进入待确认的时刻（用于超时回退）
+        self._banner_phase = 'dual'      # dual=两层 / extra=只留要诀 / confirm=待确认
+        self._banner_timer = QTimer(self)
+        self._banner_timer.setInterval(self.BANNER_TICK_MS)
+        self._banner_timer.setTimerType(Qt.PreciseTimer)
+        self._banner_timer.timeout.connect(self._banner_tick)
 
         # 倒计时忽略（收起后本次不再展开）
         self._countdown_dismissed = None
@@ -279,8 +317,18 @@ class DynamicIsland(QWidget):
         QTimer.singleShot(200, self._on_start)
 
     # ---------- 位置 ----------
+    def _screen_size(self):
+        """实时取屏幕尺寸（多屏/改分辨率后仍正确），缓存值仅作兜底。"""
+        try:
+            g = self.screen().geometry()
+            self.screen_w, self.screen_h = g.width(), g.height()
+        except Exception:
+            pass
+        return self.screen_w, self.screen_h
+
     def _center_x(self, w):
-        return self.screen_w // 2 - w // 2
+        sw, _ = self._screen_size()
+        return sw // 2 - w // 2
 
     def _move_to(self, w, h, y):
         self.setGeometry(self._center_x(w), y, w, h)
@@ -324,18 +372,22 @@ class DynamicIsland(QWidget):
         self._extra_spec = spec
         self._extra_width = new_w
 
-        if has_draw and not self._extra_timer.isActive():
+        # hidden（移出屏幕）状态下不再 60fps 空转
+        active_draw = has_draw and self._state != 'hidden'
+        if active_draw and not self._extra_timer.isActive():
             self._extra_timer.start()
-        elif not has_draw and self._extra_timer.isActive():
+        elif not active_draw and self._extra_timer.isActive():
             self._extra_timer.stop()
 
-        if changed and self._state == 'compact':
+        if changed and self._state == 'compact' and not self._pulled:
             self._animate_to(self._compact_width(), self.COMPACT_H)
         self.update()
 
     def refresh_plugins(self):
+        self._sync_banner()
         self._sync_extra()
         self._last_key = None
+        self._update_marquee()
         self.update()
 
     def _extra_hit(self, pos):
@@ -374,6 +426,8 @@ class DynamicIsland(QWidget):
         self._pin_top()
         if cb:
             cb()
+        # 几何动画结束后可用宽度可能变化，重新校准跑马灯
+        QTimer.singleShot(0, self, self._update_marquee)
 
     def _pin_top(self, *args):
         if self.isVisible():
@@ -417,7 +471,12 @@ class DynamicIsland(QWidget):
 
     # ---------- 强制演示倒计时（测试） ----------
     def start_test_countdown(self, seconds=None):
-        """无视当前时刻，强制让灵动岛演示一次倒计时。"""
+        """无视当前时刻，强制让灵动岛演示一次倒计时。
+
+        地震警报条期间直接拒绝：紧急预警优先，不允许被演练顶掉。
+        """
+        if self._state == 'banner':
+            return False
         try:
             seconds = int(seconds) if seconds else self._countdown_sec()
         except (TypeError, ValueError):
@@ -449,12 +508,10 @@ class DynamicIsland(QWidget):
         self._fill_timer.start()
         self._countdown_timer.start()
         self._start_click_poll()
+        # 立即启动结束定时器：动画回调可能被打断丢弃，不能依赖它
+        self._test_timer.start(seconds * 1000)
 
-        def _begin():
-            if self._testing:
-                self._test_timer.start(seconds * 1000)
-
-        self._animate_to(self.COUNTDOWN_W, self.COMPACT_H, on_finished=_begin)
+        self._animate_to(self.COUNTDOWN_W, self.COMPACT_H)
         return True
 
     def _end_test_countdown(self):
@@ -501,6 +558,9 @@ class DynamicIsland(QWidget):
     # ---------- 整段情景演示（提前 → 倒计时 → 上课 → 下课 → 恢复） ----------
     def start_scenario_test(self, advance_sec, countdown_sec, end_hold_sec,
                             speed=10.0):
+        """上课情景演练；地震警报条期间直接拒绝（紧急预警优先）。"""
+        if self._state == 'banner':
+            return False
         try:
             speed = max(0.1, float(speed))
         except (TypeError, ValueError):
@@ -615,13 +675,9 @@ class DynamicIsland(QWidget):
         if self._state != 'countdown':
             self._stop_click_poll()
             return
-        try:
-            pt = wintypes.POINT()
-            _user32.GetCursorPos(ctypes.byref(pt))
-            pos = QPoint(pt.x, pt.y)
-        except Exception:
-            return
-        if not self._hit_island(pos):
+        # 用 QCursor.pos()（Qt 逻辑坐标），与 frameGeometry 坐标系一致，
+        # 避免 HighDPI 缩放下物理/逻辑坐标混用导致误判岛外点击
+        if not self._hit_island(QCursor.pos()):
             self._dismiss_countdown()
 
     def _alert_width(self):
@@ -681,6 +737,9 @@ class DynamicIsland(QWidget):
     # ---------- 填充动画 ----------
     def _fill_tick(self):
         try:
+            if not self._fill_clock.isValid():
+                # 兜底：时钟没起跑就先起跑，别让进度卡在 0
+                self._fill_clock.restart()
             self._fill_progress = self._fill_clock.elapsed() / self.FILL_MS
         except Exception:
             self._fill_progress = 1.0
@@ -696,9 +755,16 @@ class DynamicIsland(QWidget):
 
         rect = self.rect()
         radius = rect.height() / 2
+        if self._state == 'banner' and self.height() > self.COMPACT_H + 1:
+            radius = self.BANNER_RADIUS          # 两层展开时的圆角
         path = QPainterPath()
         path.addRoundedRect(0, 0, rect.width(), rect.height(), radius, radius)
         p.fillPath(path, QColor("#1c1c1e"))
+
+        # 紧急警报条：独占显示，顶掉课程与倒计时
+        if self._state == 'banner':
+            self._paint_banner(p, path, rect)
+            return
 
         status = self.schedule.get_status()
 
@@ -714,7 +780,9 @@ class DynamicIsland(QWidget):
             self._paint_mini(p, status)
         else:
             self._paint_compact(p, status, ring_color, ring_ratio)
-            if self._state == 'compact':
+            # countdown（上课前蓝条）期间也绘制插件片段：
+            # 地震等紧急信息不应因为"马上要上课"而消失
+            if self._state in ('compact', 'countdown'):
                 self._paint_extra(p)
 
     def _paint_extra(self, p):
@@ -767,7 +835,9 @@ class DynamicIsland(QWidget):
         window = max(1, self._countdown_window)
         remain = self._countdown_remaining()
         ratio = max(0.0, min(1.0, remain / window))
-        shown = min(self._fill_progress, ratio)
+        # 首次填充加 OutCubic 缓动（真实倒计时比例仍保持线性）
+        fp = max(0.0, min(1.0, self._fill_progress))
+        shown = min(1.0 - (1.0 - fp) ** 3, ratio)
         if shown <= 0:
             return
 
@@ -822,7 +892,14 @@ class DynamicIsland(QWidget):
         p.setFont(font)
         color = QColor("#ffffff") if self._alert_is_end else QColor("#30d158")
         p.setPen(color)
+        # 文本 120ms 淡入，避免随宽度动画硬切出现
+        try:
+            fade = min(1.0, self._alert_clock.elapsed() / 120.0)
+        except Exception:
+            fade = 1.0
+        p.setOpacity(fade)
         p.drawText(self.rect(), Qt.AlignCenter, self._alert_text)
+        p.setOpacity(1.0)
 
     def _paint_compact(self, p, status, ring_color, ring_ratio):
         ring_x = 6
@@ -830,41 +907,110 @@ class DynamicIsland(QWidget):
         self._draw_ring(p, ring_x, ring_y, self.RING_SIZE,
                         ring_color, ring_ratio)
 
-        font = QFont("Microsoft YaHei UI")
-        font.setPixelSize(14)
-        font.setBold(True)
-        p.setFont(font)
+        p.setFont(self._capsule_font())
         p.setPen(QColor("white"))
 
-        text_x = ring_x + self.RING_SIZE + 8
-        right_margin = self._extra_width + 10 if self._extra_width > 0 else 10
-        text_rect = self.rect().adjusted(text_x, 0, -right_margin, 0)
+        text_rect = self._capsule_text_rect()
 
         if self._roll_active and self._old_text and self._new_text:
             self._draw_rolling_text(p, text_rect)
         else:
-            p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft,
-                       self._text_for(status))
+            self._draw_marquee_text(p, text_rect, self._text_for(status))
+
+    # ---------- 胶囊文字：字体 / 区域 / 跑马灯 ----------
+    def _capsule_font(self):
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(14)
+        font.setBold(True)
+        return font
+
+    def _capsule_text_rect(self):
+        """胶囊文字的绘制区域（右侧让出插件加长片段）。"""
+        ring_x = 6
+        text_x = ring_x + self.RING_SIZE + 8
+        right_margin = self._extra_width + 10 if self._extra_width > 0 else 10
+        return self.rect().adjusted(text_x, 0, -right_margin, 0)
+
+    def _draw_marquee_text(self, p, rect, text):
+        """文字放得下就直接画；放不下则左右循环滚动（跑马灯）。"""
+        if not text or rect.width() <= 4:
+            return
+        fm = QFontMetricsF(p.font())
+        w = fm.horizontalAdvance(text)
+        if w <= rect.width():
+            p.drawText(rect, Qt.AlignVCenter | Qt.AlignLeft, text)
+            return
+
+        span = w + self.MARQUEE_GAP
+        cycle = span / self.MARQUEE_SPEED + self.MARQUEE_PAUSE_S
+        elapsed = self._marquee_clock.elapsed() / 1000.0
+        phase = elapsed % cycle
+        if phase < self.MARQUEE_PAUSE_S:
+            offset = 0.0
+        else:
+            offset = (phase - self.MARQUEE_PAUSE_S) * self.MARQUEE_SPEED
+
+        p.save()
+        p.setClipRect(rect)
+        # 画两份文本，首尾相接，形成无缝循环
+        for k in (0, 1):
+            x = rect.left() - offset + k * span
+            if x > rect.right():
+                break
+            p.drawText(QRectF(x, rect.top(), w + 4.0, rect.height()),
+                       Qt.AlignVCenter | Qt.AlignLeft, text)
+        p.restore()
+
+    def _update_marquee(self):
+        """按当前文字是否溢出，启停跑马灯定时器。"""
+        # 警报条状态下不跑课程文字跑马灯（避免重置滚动相位）
+        if self._state == 'banner':
+            if self._marquee_timer.isActive():
+                self._marquee_timer.stop()
+            return
+        try:
+            text = self._text_for(self.schedule.get_status())
+        except Exception:
+            text = ""
+        if text != self._marquee_text:
+            self._marquee_text = text
+            self._marquee_clock.restart()
+
+        need = False
+        if (text and self.enabled and self._state == 'compact'
+                and not self._pulled and self.isVisible()):
+            rect = self._capsule_text_rect()
+            if rect.width() > 4:
+                fm = QFontMetricsF(self._capsule_font())
+                need = fm.horizontalAdvance(text) > rect.width()
+
+        if need:
+            if not self._marquee_timer.isActive():
+                self._marquee_clock.restart()
+                self._marquee_timer.start()
+                self.update()
+        elif self._marquee_timer.isActive():
+            self._marquee_timer.stop()
+            self.update()
 
     def _draw_rolling_text(self, p, text_rect):
-        h = text_rect.height()
+        h = float(text_rect.height())
         t = max(0.0, min(1.0, self._roll_progress))
-        offset = int(t * h)
+        te = 1.0 - (1.0 - t) ** 3          # OutCubic 缓动
+        offset = te * h                     # 浮点位移，避免整数截断抖动
         old_op = max(0.0, 1.0 - 1.5 * t)
         new_op = max(0.0, 1.5 * t - 0.5)
 
         p.save()
         p.setOpacity(old_op)
-        old_rect = QRect(text_rect.x(), text_rect.y() - offset,
-                         text_rect.width(), text_rect.height())
-        p.drawText(old_rect, Qt.AlignVCenter | Qt.AlignLeft, self._old_text)
+        p.translate(0, -offset)
+        p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._old_text)
         p.restore()
 
         p.save()
         p.setOpacity(new_op)
-        new_rect = QRect(text_rect.x(), text_rect.y() + (h - offset),
-                         text_rect.width(), text_rect.height())
-        p.drawText(new_rect, Qt.AlignVCenter | Qt.AlignLeft, self._new_text)
+        p.translate(0, h - offset)
+        p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._new_text)
         p.restore()
 
     def _draw_ring(self, p, x, y, size, color, ratio):
@@ -889,10 +1035,21 @@ class DynamicIsland(QWidget):
         p.drawEllipse(cx - r, cy - r, r * 2, r * 2)
 
     # ---------- 顶掉 ----------
+    def _text_roll_ms(self):
+        """文字滚动时长跟随“动画时长”设置（取 0.7 倍，钳制 120-400ms）。"""
+        try:
+            d = int(self.settings.get("anim_duration", 320))
+        except (TypeError, ValueError):
+            d = 320
+        return max(120, min(400, int(d * 0.7)))
+
     def _start_text_roll(self, old_text, new_text):
         if not self.settings.get("anim_fade_text", True):
             self.update()
             return
+        # 上一次滚动未完成时，以其目标文本作为本次起点，避免中间态跳变
+        if self._roll_active and self._new_text:
+            old_text = self._new_text
         self._old_text = old_text
         self._new_text = new_text
         self._roll_progress = 0.0
@@ -902,7 +1059,8 @@ class DynamicIsland(QWidget):
 
     def _roll_tick(self):
         try:
-            self._roll_progress = self._roll_clock.elapsed() / self.TEXT_ROLL_MS
+            self._roll_progress = \
+                self._roll_clock.elapsed() / self._text_roll_ms()
         except Exception:
             self._roll_progress = 1.0
         if self._roll_progress >= 1.0:
@@ -962,7 +1120,8 @@ class DynamicIsland(QWidget):
 
     def _layout(self, left, mid, right):
         all_specs = left + [mid] + right
-        max_total = int(self.screen_w * self.MAX_TOTAL_RATIO)
+        sw, _ = self._screen_size()
+        max_total = int(sw * self.MAX_TOTAL_RATIO)
 
         widths = []
         for s in all_specs:
@@ -1021,10 +1180,19 @@ class DynamicIsland(QWidget):
         return sum(r['w'] for r in self._panel_rects) + \
                self.PANEL_GAP * (len(self._panel_rects) - 1)
 
+    def _panel_duration(self):
+        """面板展开/收起时长读取“动画时长”设置（anim_duration）。"""
+        try:
+            d = int(self.settings.get("anim_duration", 320))
+        except (TypeError, ValueError):
+            d = 320
+        return max(100, min(500, d))
+
     def _pull_down(self):
         if self._pulled or self._state != 'compact':
             return
         self._pulled = True
+        self._pull_generation += 1
 
         left, mid, right = self._collect_specs()
         rects = self._layout(left, mid, right)
@@ -1035,10 +1203,12 @@ class DynamicIsland(QWidget):
         self._panel_rects = rects
         self._panels = []
         fade = bool(self.settings.get("anim_fade_panel", True))
+        dur = self._panel_duration()
         for r in rects:
-            pw = PanelWindow(r['w'], r['h'], fade=fade)
+            pw = PanelWindow(r['w'], r['h'], fade=fade, duration=dur)
             pw.set_content(r['spec'].get('text', ''))
             pw.place(r['x'], r['y'])
+            pw.set_drag_target(self._drag_scroll)
             self._panels.append(pw)
 
         target_w = self._total_panel_width()
@@ -1046,20 +1216,37 @@ class DynamicIsland(QWidget):
                          on_finished=self._stagger_panels_in)
 
     def _stagger_panels_in(self):
+        gen = self._pull_generation
         for i, pw in enumerate(self._panels):
-            QTimer.singleShot(i * self.PANEL_STAGGER, pw.animate_in)
+            QTimer.singleShot(i * self.PANEL_STAGGER, self,
+                              lambda g=gen, p=pw: self._panel_in_guard(g, p))
 
         last_delay = (len(self._panels) - 1) * self.PANEL_STAGGER + 240
-        QTimer.singleShot(last_delay, self._setup_scroll)
-        QTimer.singleShot(last_delay,
-                          lambda: self._pull_timer.start(self.PULL_HOLD_MS))
+        QTimer.singleShot(last_delay, self,
+                          lambda g=gen: self._setup_scroll_guard(g))
+        QTimer.singleShot(
+            last_delay, self,
+            lambda g=gen: (g == self._pull_generation and self._pulled)
+            and self._pull_timer.start(self.PULL_HOLD_MS))
+
+    def _panel_in_guard(self, gen, pw):
+        """快速收起后作废延迟的展开回调，防止幽灵面板残留。"""
+        if gen != self._pull_generation or not self._pulled:
+            return
+        pw.animate_in()
+
+    def _setup_scroll_guard(self, gen):
+        if gen != self._pull_generation or not self._pulled:
+            return
+        self._setup_scroll()
 
     def _setup_scroll(self):
         if not self._panel_rects:
             return
         max_bottom = max(r['y'] + r['h'] for r in self._panel_rects)
         top_limit = self.TOP_MARGIN + self.COMPACT_H + self.PANEL_GAP
-        max_allowed = int(self.screen_h * self.MAX_HEIGHT_RATIO)
+        _, sh = self._screen_size()
+        max_allowed = int(sh * self.MAX_HEIGHT_RATIO)
 
         if max_bottom <= top_limit + max_allowed:
             return
@@ -1068,6 +1255,7 @@ class DynamicIsland(QWidget):
         total_w = self._total_panel_width()
         x = self._center_x(total_w)
         self._fade_mask = FadeMask(total_w, 24)
+        # 遮罩固定在可视底边，不随内容滚动
         self._fade_mask.move(x, bottom_y - 24)
         self._fade_mask.show()
 
@@ -1076,6 +1264,7 @@ class DynamicIsland(QWidget):
 
     def _push_up(self):
         self._pull_timer.stop()
+        self._pull_generation += 1   # 作废所有延迟展开回调
 
         if not self._pulled:
             return
@@ -1115,21 +1304,29 @@ class DynamicIsland(QWidget):
         self._animate_to(self._compact_width(), self.COMPACT_H)
 
     def _do_scroll(self, delta):
+        """滚动面板内容；返回真正生效的位移（触屏惯性靠它判断有没有到头）。"""
         if not self._pulled or self._scroll_max <= 0:
-            return
+            return 0
         new_offset = max(-self._scroll_max,
                          min(0, self._scroll_offset + delta))
-        if new_offset == self._scroll_offset:
-            return
+        applied = new_offset - self._scroll_offset
+        if not applied:
+            return 0
         self._scroll_offset = new_offset
         for pw in self._panels:
             pw.set_scroll(self._scroll_offset)
 
+        # 遮罩位置固定；滚到底（无更多内容）时隐藏
         if self._fade_mask:
-            top_limit = self.TOP_MARGIN + self.COMPACT_H + self.PANEL_GAP
-            max_allowed = int(self.screen_h * self.MAX_HEIGHT_RATIO)
-            new_y = top_limit + max_allowed + self._scroll_offset - 24
-            self._fade_mask.move(self._fade_mask.x(), new_y)
+            if self._scroll_offset <= -self._scroll_max:
+                self._fade_mask.hide()
+            else:
+                self._fade_mask.show()
+        return applied
+
+    def _drag_scroll(self, dy):
+        """面板上手指拖动 / 鼠标拖拽滚内容：往上拖就往下看。"""
+        return self._do_scroll(dy)
 
     def wheelEvent(self, event):
         self._do_scroll(-event.angleDelta().y() // 2)
@@ -1164,10 +1361,417 @@ class DynamicIsland(QWidget):
         return False
 
     # ---------- 提醒 ----------
-    def notify(self, text, is_end=False):
+    def notify(self, text, is_end=False, force=False):
+        """弹出提醒条。
+
+        force=True 时（地震等紧急预警）：即使灵动岛因上课 / PPT 全屏 /
+        Office 前台被隐藏，也会强制现身，并在 hold 秒内保持不被再次隐藏。
+        """
         if not self.enabled:
             return
+        if force:
+            try:
+                hold = int(self.settings.get("island_force_hold_sec", 60))
+            except (TypeError, ValueError):
+                hold = 60
+            self._force_until = time.monotonic() + max(10, hold)
+            # 按"实际位置"判断：隐藏 / mini / 动画停在屏幕外都要拉回来
+            if (self._state in ('hidden', 'mini')
+                    or self.geometry().top() < self.TOP_MARGIN):
+                self._force_wake()
         self._show_alert(str(text), bool(is_end))
+
+    def _force_active(self):
+        return time.monotonic() < float(self._force_until or 0.0)
+
+    def _force_wake(self):
+        """强制回到屏幕内：直接落在顶部居中位置，不播唤醒动画。"""
+        if self._state in ('hidden', 'mini'):
+            self._state = 'compact'
+        h = self.COMPACT_H
+        if self._state == 'banner':
+            w = max(self.BANNER_MIN_W, self.width())
+            h = max(self._banner_height(), self.height())
+        elif self._state == 'countdown':
+            w = self.COUNTDOWN_W
+        elif self._state == 'alert':
+            w = max(self.MINI_W, self.width())
+        else:
+            w = self._compact_width()
+        self.setGeometry(self._center_x(w), self.TOP_MARGIN, w, h)
+        self.update()
+
+    # ---------- 紧急警报条（地震等，主岛+副岛融合成一条） ----------
+    def _banner_font(self):
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(15)
+        font.setBold(True)
+        return font
+
+    def _banner_tips_font(self):
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(13)
+        font.setBold(True)
+        return font
+
+    @staticmethod
+    def _spec_tips(spec):
+        """从任意 banner spec 里取第二层文字（避险要诀）。"""
+        if not isinstance(spec, dict):
+            return ''
+        extra = spec.get('extra')
+        if isinstance(extra, dict):
+            return str(extra.get('text') or '')
+        return str(spec.get('extra_text') or '')
+
+    def _banner_tips_text(self):
+        """第二层（向下拓展的那一排）文字：避险要诀等。"""
+        return self._spec_tips(self._banner_spec)
+
+    def _banner_show_main(self):
+        """第一层（倒计时警报条）是否还在显示。"""
+        return self._banner_phase == 'dual'
+
+    def _banner_hold_sec(self):
+        """第一层保持多久后消失（只留避险要诀）。"""
+        spec = self._banner_spec or {}
+        try:
+            return max(3.0, float(spec.get('extra_hold_sec', 60)))
+        except (TypeError, ValueError):
+            return 60.0
+
+    def _banner_confirm_timeout(self):
+        """待确认状态多久没操作就退回「只显示要诀」；<=0 表示不超时。"""
+        spec = self._banner_spec or {}
+        try:
+            v = float(spec.get('confirm_timeout_sec', 5.0))
+        except (TypeError, ValueError):
+            v = 5.0
+        return v if v > 0 else 0.0
+
+    def _banner_height(self):
+        if self._banner_show_main() and self._banner_tips_text():
+            return self.COMPACT_H + self.BANNER_TIPS_H
+        return self.COMPACT_H
+
+    def _banner_width(self):
+        spec = self._banner_spec or {}
+        items = [(str(spec.get('text') or ''), self._banner_font(), 44)]
+        tips = self._banner_tips_text()
+        if tips:
+            items.append((tips, self._banner_tips_font(), 64))
+        w = 0
+        try:
+            for text, font, pad in items:
+                w = max(w, int(QFontMetricsF(font).horizontalAdvance(text))
+                        + pad)
+        except Exception:
+            w = self.BANNER_MIN_W
+        try:
+            w = max(w, int(spec.get('min_width') or 0))
+        except (TypeError, ValueError):
+            pass
+        return int(max(self.BANNER_MIN_W, min(self.BANNER_MAX_W, w)))
+
+    def _banner_relayout(self, animate=True):
+        w, h = self._banner_width(), self._banner_height()
+        if animate:
+            self._animate_to(w, h)
+        else:
+            self._move_to(w, h, self.TOP_MARGIN)
+
+    def _sync_banner(self):
+        """向插件取紧急警报条：有则独占主岛显示，无则退出。
+
+        注意：警报条**优先于主程序自身的测试/演练**——正在跑"上课倒计时演练"
+        时若来了地震，警报条会把它顶掉。
+        """
+        spec = None
+        if self.enabled and self.plugin_manager is not None:
+            try:
+                spec = self.plugin_manager.get_island_banner()
+            except Exception:
+                spec = None
+        prev = self._banner_spec
+        self._banner_spec = spec
+
+        if spec is not None and self._state != 'banner':
+            self._enter_banner()
+        elif spec is None and self._state == 'banner':
+            self._leave_banner()
+        elif spec is not None:
+            # 待确认阶段不因数据刷新而改动布局（避免打断用户确认）
+            if self._banner_phase == 'confirm':
+                self.update()
+                return
+            changed = (prev is None
+                       or str(prev.get('text') or '')
+                       != str(spec.get('text') or '')
+                       or self._spec_tips(prev) != self._spec_tips(spec))
+            if changed or self.height() != self._banner_height():
+                self._banner_relayout()
+            self.update()
+
+    def _banner_set_rate(self):
+        """按当前阶段调整重绘频率：倒计时条 30fps，静态要诀降到 ~4fps。"""
+        if self._banner_phase == 'dual':
+            ms = self.BANNER_TICK_MS
+        elif self._banner_phase == 'confirm':
+            ms = 60          # 高亮淡入需要一点帧率
+        else:
+            ms = 250         # 只显示静态要诀，省电
+        if self._banner_timer.interval() != ms:
+            self._banner_timer.setInterval(ms)
+
+    def _banner_tick(self):
+        # 持续续期：只要警报条还在，全屏 / PPT / Office 前台都不会把它收起来
+        self._force_until = max(self._force_until,
+                                time.monotonic() + self.BANNER_HOLD_SEC)
+        self._sync_banner()
+        # 第一层保持时间到 → 第一层消失，只留避险要诀（窗口收成一层）
+        if (self._state == 'banner' and self._banner_phase == 'dual'
+                and self._banner_tips_text()
+                and time.monotonic() - self._banner_mono
+                >= self._banner_hold_sec()):
+            self._banner_phase = 'extra'
+            self._banner_clock.restart()
+            self._banner_relayout()
+        # 待确认超时（只点了一次就不管了）→ 退回「只显示要诀」，避免误触后被占屏
+        elif (self._state == 'banner' and self._banner_phase == 'confirm'
+                and self._banner_confirm_timeout()
+                and time.monotonic() - self._banner_confirm_mono
+                >= self._banner_confirm_timeout()):
+            self._banner_phase = 'extra'
+            self._banner_confirm_mono = 0.0
+            self._banner_clock.restart()
+            self.update()
+        self._banner_set_rate()
+        self.update()
+
+    def _enter_banner(self):
+        """进入警报条：顶掉课程文本、上课前倒计时与提醒条。"""
+        if not self.enabled:
+            return
+        if not self.isVisible():
+            self.show()
+        self._pin_top()
+        if self._pulled:
+            self._push_up()
+
+        # 顶掉一切课表相关显示（紧急事件优先于上课）
+        self._fill_timer.stop()
+        self._countdown_timer.stop()
+        self._fill_progress = 0.0
+        self._countdown_end = None
+        self._stop_click_poll()
+        self._marquee_timer.stop()
+        self._alert_id += 1            # 作废未完成的提醒收回定时器
+        # 顶掉主程序的测试/情景演练（地震优先）
+        if self._testing:
+            self._abort_demo()
+
+        self._state = 'banner'
+        self._banner_phase = 'dual'
+        self._banner_mono = time.monotonic()
+        self._banner_confirm_mono = 0.0
+        self._banner_clock.restart()
+        self._force_until = time.monotonic() + self.BANNER_HOLD_SEC
+        self._banner_set_rate()
+        self._banner_timer.start()
+        self.update()
+        self._banner_relayout()
+
+    def _leave_banner(self):
+        self._banner_timer.stop()
+        self._banner_spec = None
+        self._banner_phase = 'dual'
+        self._banner_mono = 0.0
+        self._banner_confirm_mono = 0.0
+        self._last_key = None
+        self._last_status = None
+        self._state = 'compact'
+        self.update()
+        if not self.enabled:
+            self._go_to_sleep()
+            return
+        self._animate_to(self._compact_width(), self.COMPACT_H)
+        self._refresh()
+
+    def _banner_confirm(self):
+        """执行"确认"：通知插件后收起警报条，恢复课程显示。"""
+        cb = (self._banner_spec or {}).get('on_confirm')
+        if callable(cb):
+            try:
+                cb()
+            except Exception:
+                pass
+        self._leave_banner()
+
+    def _banner_click(self):
+        """点击警报条。
+
+        - 两层都还在（地震还没过去）：不响应，避免误触
+        - 只剩避险要诀：第一次点击进入「待确认」
+        - 待确认状态：第二次点击＝确认，恢复课程显示
+        - 没有避险要诀时：走插件给的 on_click
+        """
+        tips = self._banner_tips_text()
+        if not tips:
+            cb = (self._banner_spec or {}).get('on_click')
+            if callable(cb):
+                try:
+                    cb()
+                except Exception:
+                    pass
+            return
+        if self._banner_phase == 'dual':
+            return
+        if self._banner_phase == 'extra':
+            try:
+                need = bool((self._banner_spec or {}).get('require_confirm',
+                                                          True))
+            except Exception:
+                need = True
+            if not need:
+                self._banner_confirm()      # 关掉"需确认"时一次点击即收起
+                return
+            self._banner_phase = 'confirm'
+            self._banner_confirm_mono = time.monotonic()
+            self._banner_clock.restart()
+            self._banner_set_rate()
+            self.update()
+            return
+        self._banner_confirm()
+
+    def _paint_banner(self, p, path, rect):
+        spec = self._banner_spec or {}
+        tips = self._banner_tips_text()
+        try:
+            fade = min(1.0, self._banner_clock.elapsed() / self.BANNER_FADE_MS)
+        except Exception:
+            fade = 1.0
+
+        if self._banner_show_main():
+            if tips:
+                # 第一层：倒计时警报条；第二层：避险要诀
+                main_rect = QRectF(rect.left(), rect.top(),
+                                   rect.width(), self.COMPACT_H)
+                tips_rect = QRectF(rect.left(), rect.top() + self.COMPACT_H,
+                                   rect.width(), self.BANNER_TIPS_H)
+                p.save()
+                p.setOpacity(fade)
+                self._paint_banner_bar(p, main_rect, path, spec)
+                # 两层之间的分隔线
+                p.setPen(QPen(QColor(255, 255, 255, 40), 1))
+                y = rect.top() + self.COMPACT_H
+                p.drawLine(int(rect.left() + 16), int(y),
+                           int(rect.right() - 16), int(y))
+                p.restore()
+                self._paint_banner_tips(p, tips_rect, tips, fade)
+            else:
+                # 只有第一层（小震 / 未配置要诀）：整条就是倒计时警报条。
+                # 之前此处漏画，导致小震演练时灵动岛只剩一个全黑胶囊。
+                p.save()
+                p.setOpacity(fade)
+                self._paint_banner_bar(p, QRectF(rect), path, spec)
+                p.restore()
+        else:
+            # 第一层已消失：整条只剩避险要诀（仍然顶掉课程显示）
+            self._paint_banner_tips(p, QRectF(rect), tips, fade)
+
+    def _paint_banner_bar(self, p, rect, path, spec):
+        """第一层：进度填充条 + 文案。"""
+        try:
+            ratio = max(0.0, min(1.0, float(spec.get('ratio', 1.0))))
+        except (TypeError, ValueError):
+            ratio = 1.0
+        color = QColor(str(spec.get('color') or '#ff453a'))
+
+        h = rect.height()
+        inset = self.BAR_INSET
+        bar_h = max(2.0, h - inset * 2)
+        r = bar_h / 2
+        fill_w = max(0.0, rect.width() * ratio)
+
+        if fill_w > inset:
+            p.save()
+            p.setClipPath(path)
+            p.setPen(Qt.NoPen)
+            bar_w = fill_w - inset
+            rr = min(r, bar_w / 2.0)
+            bar_rect = QRectF(rect.left() + inset, rect.top() + inset,
+                              bar_w, bar_h)
+            p.setBrush(color)
+            p.drawRoundedRect(bar_rect, rr, rr)
+
+            # 流光扫过（比蓝条更亮，强化告警感）
+            phase = (self._anim_clock.elapsed() % self.SHEEN_CYCLE_MS) \
+                / self.SHEEN_CYCLE_MS
+            sheen_w = max(48.0, fill_w * 0.45)
+            cx = rect.left() - sheen_w + phase * (fill_w + 2 * sheen_w)
+            grad = QLinearGradient(cx, 0, cx + sheen_w, 0)
+            grad.setColorAt(0.0, QColor(255, 255, 255, 0))
+            grad.setColorAt(0.5, QColor(255, 255, 255, 95))
+            grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+            p.setBrush(grad)
+            p.drawRoundedRect(bar_rect, rr, rr)
+
+            # 前缘亮点
+            head_x = rect.left() + inset + bar_w
+            p.setBrush(QColor(255, 236, 232, 235))
+            p.drawEllipse(QPointF(head_x - r, rect.top() + h / 2.0),
+                          r * 0.62, r * 0.62)
+            p.restore()
+
+        p.setFont(self._banner_font())
+        p.setPen(QColor('#ffffff'))
+        self._draw_banner_text(p, rect.adjusted(18, 0, -18, 0),
+                               str(spec.get('text') or ''))
+
+    def _paint_banner_tips(self, p, rect, text, fade=1.0):
+        """第二层：避险要诀（待确认时整条高亮并提示"点击确认"）。"""
+        if not text:
+            return
+        confirm = (self._banner_phase == 'confirm')
+        p.save()
+        p.setOpacity(fade)
+        if confirm:
+            hl = QPainterPath()
+            hl.addRoundedRect(rect.adjusted(2, 2, -2, -2), 15, 15)
+            p.fillPath(hl, QColor(255, 69, 58, 70))
+        # 左侧警示图标
+        box = QRectF(rect.left() + 14,
+                     rect.top() + (rect.height() - 18) / 2.0, 18, 18)
+        self._draw_banner_badge(p, box, confirm)
+        p.setFont(self._banner_tips_font())
+        p.setPen(QColor('#ffffff') if confirm else QColor('#ffd9d4'))
+        label = "点击确认，恢复上课显示" if confirm else text
+        self._draw_banner_text(p, rect.adjusted(42, 0, -16, 0), label)
+        p.restore()
+
+    def _draw_banner_badge(self, p, box, confirm=False):
+        """避险要诀前的圆形警示徽标（红色圆 + 白色感叹号）。"""
+        p.save()
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 69, 58, 235 if confirm else 190))
+        p.drawEllipse(box)
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(12)
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QColor('#ffffff'))
+        p.drawText(box, Qt.AlignCenter, "!")
+        p.restore()
+
+    def _draw_banner_text(self, p, rect, text):
+        """警报文本：放得下居中，放不下则跑马灯滚动。"""
+        if not text or rect.width() <= 4:
+            return
+        fm = QFontMetricsF(p.font())
+        if fm.horizontalAdvance(text) <= rect.width():
+            p.drawText(rect, Qt.AlignVCenter | Qt.AlignHCenter, text)
+            return
+        self._draw_marquee_text(p, rect, text)
 
     def _show_alert(self, text, is_end):
         self._fill_timer.stop()
@@ -1176,18 +1780,25 @@ class DynamicIsland(QWidget):
         self._countdown_end = None
         self._alert_text = text
         self._alert_is_end = is_end
+        self._alert_id += 1
+        self._alert_clock.restart()
         self._state = 'alert'
         self.update()
 
         w = self._alert_width()
         hold = int(self.settings.get("island_alert_hold_ms", 600))
+        aid = self._alert_id
 
         self._animate_to(w, self.COMPACT_H,
                          on_finished=lambda: QTimer.singleShot(
-                             hold, self._alert_return))
+                             hold, self, lambda a=aid: self._alert_return(a)))
 
-    def _alert_return(self):
+    def _alert_return(self, aid=None):
         """平滑回收到胶囊宽度（不再收到 0 宽）"""
+        if aid is not None and aid != self._alert_id:
+            return   # 上一条提醒的 hold 定时器，已作废
+        if self._state != 'alert':
+            return   # 期间已被全屏隐藏/收起，不打破当前状态
         self._state = 'compact'
         self.update()
         self._animate_to(self._compact_width(), self.COMPACT_H)
@@ -1227,6 +1838,9 @@ class DynamicIsland(QWidget):
     def _go_to_sleep(self):
         if self._state == 'hidden':
             return
+        # 紧急警报条期间不休眠（地震等优先于"全屏自动收起"）
+        if self._state == 'banner' and self.enabled and self._force_active():
+            return
         self._fill_timer.stop()
         self._countdown_timer.stop()
         self._fill_progress = 0.0
@@ -1234,6 +1848,7 @@ class DynamicIsland(QWidget):
         self._stop_click_poll()
         if self._pulled:
             self._push_up()
+        self._marquee_timer.stop()
         self._state = 'mini'
         self._animate_to(self.MINI_W, self.COMPACT_H,
                          on_finished=lambda: QTimer.singleShot(
@@ -1254,6 +1869,15 @@ class DynamicIsland(QWidget):
             return
         if _root_hwnd(fg) == int(self.winId()):
             return
+
+        # 强制显示期间（地震等紧急预警）：不因全屏 / PPT / Office 前台而隐藏，
+        # 若已被隐藏则立刻拉回屏幕（这是"上课开 PPT 也要弹出来"的关键）
+        if self._force_active():
+            if (self._state in ('hidden', 'mini')
+                    or self.geometry().top() < self.TOP_MARGIN):
+                self._force_wake()
+            if _is_fullscreen(fg) or _is_office_foreground(fg):
+                return
 
         # 倒计时期间切到 WPS / Office → 退出进度条，回默认状态（演示中则中止）
         if self._state == 'countdown' and _is_office_foreground(fg):
@@ -1290,13 +1914,26 @@ class DynamicIsland(QWidget):
             if end is None or now < end:
                 return False
             self._holiday_alerted_date = key
-            self._show_alert("放假啦！", is_end=True)
+            self._show_alert("放假啦，撒花 🎉", is_end=True)
             return True
         except Exception:
             return False
 
     # ---------- 定时刷新 ----------
     def _refresh(self):
+        """每秒刷新入口：先同步紧急警报条，再跑内部逻辑并校准跑马灯。"""
+        try:
+            self._sync_banner()
+            self._refresh_impl()
+        finally:
+            self._update_marquee()
+
+    def _refresh_impl(self):
+        # 紧急警报条独占：课程文本 / 上课倒计时 / 提醒条都不参与显示
+        if self._state == 'banner':
+            self._last_key = None
+            self._extra_timer.stop()
+            return
         if self._state == 'hidden':
             self._last_key = None
             self._sync_extra()
@@ -1341,6 +1978,10 @@ class DynamicIsland(QWidget):
                 self._countdown_window = self._countdown_sec()
                 self._countdown_end = datetime.now() + timedelta(
                     seconds=status.get('until_sec', self._countdown_window))
+                # 填充时钟必须在这里起跑：没启动的 QElapsedTimer 会吐一个
+                # 巨大负数，_fill_progress 被夹成 0，蓝条就永远画不出来了
+                # （只有岛变长、不见蓝条的那种怪症状）
+                self._fill_clock.restart()
                 self._fill_timer.start()
                 self._countdown_timer.start()
                 self._start_click_poll()
@@ -1378,12 +2019,15 @@ class DynamicIsland(QWidget):
         if st == 'ongoing':
             return f"本节：{course} 还剩 {key[3]}分钟"
         if st == 'none':
-            return "今日无课"
+            return "今日无课哦~"
         return "今日课程已结束"
 
     # ---------- 交互 ----------
     def mousePressEvent(self, event):
         if event.button() != Qt.LeftButton:
+            return
+        if self._state == 'banner':
+            self._banner_click()
             return
         if self._state in ('hidden', 'countdown', 'alert', 'mini'):
             return
@@ -1405,15 +2049,20 @@ class DynamicIsland(QWidget):
 
     def contextMenuEvent(self, event):
         m = QMenu(self)
-        m.addAction("关闭灵动岛", self.close)
+        m.addAction("隐藏灵动岛", self.close)
         m.exec(event.globalPos())
 
     def closeEvent(self, event):
         self._scenario_id += 1
         self._testing = False
+        try:
+            self.anim.stop()
+        except Exception:
+            pass
         timers = [self.tick_timer, self.pin_timer, self._fill_timer,
                   self._roll_timer, self._pull_timer, self._test_timer,
                   self._countdown_timer, self._extra_timer,
+                  self._marquee_timer, self._banner_timer,
                   getattr(self, 'watch_timer', None), self._click_timer]
         for timer in timers:
             if timer is not None:

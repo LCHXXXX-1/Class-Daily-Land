@@ -1,30 +1,47 @@
-"""状态测试：叠加「提前 + 倒计时 + 时间偏移」，并可整段演示。"""
+"""状态测试（全新界面）。
+
+叠加「提前提醒 + 倒计时窗口 + 时间偏移」，实时预览灵动岛状态，
+并可整段演示「提前 → 倒计时 → 上课 → 下课」的完整过程。
+
+公共接口与旧版一致：
+    StatusTestDialog(schedule_manager, settings, controller=None, parent=None)
+"""
 import time
 from datetime import datetime, timedelta
 
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                               QPushButton, QSpinBox, QDateTimeEdit, QComboBox,
-                               QFrame, QSizePolicy)
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
+                               QLabel, QPushButton, QSpinBox, QDateTimeEdit,
+                               QComboBox, QFrame, QSizePolicy)
 from PySide6.QtCore import Qt, QTimer, QDateTime, QRectF, QPointF
 from PySide6.QtGui import QPainter, QColor, QPainterPath, QFont, QPen
 
 from ui_common import setup_dialog_style
+from settings_widgets import SectionCard, apply_modern_dialog, play_entrance
 
 
 def _clamp01(v):
     return max(0.0, min(1.0, v))
 
 
-class IslandPreview(QFrame):
-    """按灵动岛样式预览，支持宽度/进度/提醒动画。"""
+def _fmt(dt):
+    return dt.strftime('%H:%M:%S')
 
-    def __init__(self):
-        super().__init__()
+
+def _fmt_secs(sec):
+    m, s = divmod(max(0, int(sec)), 60)
+    return f"{m}分{s:02d}秒"
+
+
+class IslandPreview(QFrame):
+    """灵动岛样式预览：胶囊 / 蓝色进度条 / 提醒动画。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setFixedHeight(46)
         self.setMinimumWidth(260)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._text = ""
-        self._state = 'none'
+        self._state = "none"
         self._ratio = 0.0
         self._width_ratio = 1.0
         self._is_end = False
@@ -37,18 +54,18 @@ class IslandPreview(QFrame):
         self._is_end = is_end
         self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, _event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
 
-        full = self.rect()
-        cap_w = max(40, int(full.width() * self._width_ratio))
-        cap_x = (full.width() - cap_w) / 2.0
-        h = full.height()
+        rect = self.rect()
+        width = max(40, int(rect.width() * self._width_ratio))
+        x = (rect.width() - width) / 2.0
+        h = rect.height()
         radius = h / 2.0
 
         path = QPainterPath()
-        path.addRoundedRect(QRectF(cap_x, 0, cap_w, h), radius, radius)
+        path.addRoundedRect(QRectF(x, 0, width, h), radius, radius)
         p.fillPath(path, QColor('#1c1c1e'))
 
         if self._state == 'alert':
@@ -57,26 +74,24 @@ class IslandPreview(QFrame):
             font.setBold(True)
             p.setFont(font)
             p.setPen(QColor('#ffffff') if self._is_end else QColor('#30d158'))
-            p.drawText(QRectF(cap_x, 0, cap_w, h), Qt.AlignCenter, self._text)
+            p.drawText(QRectF(x, 0, width, h), Qt.AlignCenter, self._text)
             return
 
-        # 蓝色进度条（倒计时）
         if self._state == 'countdown' and self._ratio > 0:
             p.save()
             p.setClipPath(path)
-            bar_w = cap_w * self._ratio
+            bar_w = width * self._ratio
             p.setPen(Qt.NoPen)
             p.setBrush(QColor('#0a84ff'))
             rr = min(h / 2.0, bar_w / 2.0)
-            p.drawRoundedRect(QRectF(cap_x, 1, max(0.0, bar_w), h - 2), rr, rr)
+            p.drawRoundedRect(QRectF(x, 1, max(0.0, bar_w), h - 2), rr, rr)
             p.restore()
 
-        color = QColor({'ongoing': '#30d158',
-                        'upcoming': '#4da3ff',
+        color = QColor({'ongoing': '#30d158', 'upcoming': '#4da3ff',
                         'countdown': '#4da3ff'}.get(self._state, '#8a8a8e'))
 
         ring = 26
-        rx = cap_x + 6
+        rx = x + 6
         ry = (h - ring) // 2
         p.setPen(QPen(QColor('#3a3a3c'), 2))
         p.setBrush(Qt.NoBrush)
@@ -95,31 +110,27 @@ class IslandPreview(QFrame):
         font.setBold(True)
         p.setFont(font)
         p.setPen(QColor('white'))
-        text_rect = QRectF(rx + ring + 8, 0, cap_x + cap_w - (rx + ring + 8) - 10,
-                           h)
+        text_rect = QRectF(rx + ring + 8, 0,
+                           x + width - (rx + ring + 8) - 10, h)
         p.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self._text)
-
-
-def _fmt(dt):
-    return dt.strftime('%H:%M:%S')
-
-
-def _fmt_secs(sec):
-    sec = int(sec)
-    m, s = divmod(max(0, sec), 60)
-    return f"{m}分{s:02d}秒"
+        p.end()
 
 
 class StatusTestDialog(QDialog):
-    def __init__(self, schedule_manager, settings, controller=None, parent=None):
+    def __init__(self, schedule_manager, settings, controller=None,
+                 parent=None, embedded=False):
         super().__init__(parent)
         self.schedule = schedule_manager
         self.settings = settings
         self.controller = controller
+        self._cards = []
 
         self.setWindowTitle("状态测试")
-        self.resize(600, 620)
-        setup_dialog_style(self)
+        self.resize(680, 700)
+        self.setMinimumSize(580, 560)
+        if not embedded:
+            setup_dialog_style(self)
+        apply_modern_dialog(self)
 
         self._demo_running = False
         self._sim_timer = QTimer(self)
@@ -127,86 +138,107 @@ class StatusTestDialog(QDialog):
         self._sim_timer.timeout.connect(self._sim_tick)
         self._sim_start = 0.0
 
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(26, 22, 26, 18)
+        root.setSpacing(10)
 
-        # 测试时刻
-        row = QHBoxLayout()
-        row.addWidget(QLabel("测试时刻："))
+        title = QLabel("状态测试")
+        title.setObjectName("pageTitle")
+        root.addWidget(title)
+        sub = QLabel("叠加「提前提醒 + 倒计时窗口 + 时间偏移」，"
+                     "实时预览灵动岛状态，并可整段演示。")
+        sub.setObjectName("pageSub")
+        sub.setWordWrap(True)
+        root.addWidget(sub)
+        root.addSpacing(6)
+
+        # ---------- 参数 ----------
+        card = SectionCard("测试参数")
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(8)
+
+        grid.addWidget(QLabel("测试时刻"), 0, 0)
         self.dt_edit = QDateTimeEdit(QDateTime.currentDateTime())
         self.dt_edit.setCalendarPopup(True)
         self.dt_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
         self.dt_edit.dateTimeChanged.connect(self._update)
-        row.addWidget(self.dt_edit, 1)
+        grid.addWidget(self.dt_edit, 0, 1, 1, 3)
         now_btn = QPushButton("现在")
+        now_btn.setCursor(Qt.PointingHandCursor)
         now_btn.clicked.connect(self._set_now)
-        row.addWidget(now_btn)
-        layout.addLayout(row)
+        grid.addWidget(now_btn, 0, 4)
 
-        # 参数
-        params = QHBoxLayout()
-        params.addWidget(QLabel("时间偏移(秒)"))
+        grid.addWidget(QLabel("时间偏移"), 1, 0)
         self.offset = QSpinBox()
         self.offset.setRange(-1800, 1800)
+        self.offset.setSuffix(" 秒")
         self.offset.setValue(int(self.schedule.time_offset_seconds))
         self.offset.valueChanged.connect(self._update)
-        params.addWidget(self.offset)
-        params.addSpacing(10)
-        params.addWidget(QLabel("提前(分钟)"))
+        grid.addWidget(self.offset, 1, 1)
+
+        grid.addWidget(QLabel("提前提醒"), 1, 2)
         self.advance = QSpinBox()
         self.advance.setRange(0, 60)
+        self.advance.setSuffix(" 分")
         self.advance.setValue(int(self.schedule.advance_minutes))
         self.advance.valueChanged.connect(self._update)
-        params.addWidget(self.advance)
-        params.addSpacing(10)
-        params.addWidget(QLabel("倒计时(秒)"))
+        grid.addWidget(self.advance, 1, 3)
+
+        grid.addWidget(QLabel("倒计时"), 2, 0)
         self.countdown = QSpinBox()
         self.countdown.setRange(5, 600)
+        self.countdown.setSuffix(" 秒")
         self.countdown.setValue(
             int(self.settings.get("island_countdown_sec", 60)))
         self.countdown.valueChanged.connect(self._update)
-        params.addWidget(self.countdown)
-        params.addSpacing(10)
-        params.addWidget(QLabel("倍速"))
+        grid.addWidget(self.countdown, 2, 1)
+
+        grid.addWidget(QLabel("演示倍速"), 2, 2)
         self.speed = QComboBox()
         for x in ("1", "5", "10", "20", "30"):
             self.speed.addItem(f"{x}×", int(x))
-        self.speed.setCurrentIndex(2)   # 10×
-        params.addWidget(self.speed)
-        params.addStretch()
-        layout.addLayout(params)
+        self.speed.setCurrentIndex(2)          # 10×
+        grid.addWidget(self.speed, 2, 3)
+        card.body.addLayout(grid)
+        root.addWidget(card)
+        self._cards.append(card)
 
-        # 预览
-        layout.addWidget(QLabel("灵动岛预览："))
+        # ---------- 预览 ----------
+        card2 = SectionCard("灵动岛预览")
         self.preview = IslandPreview()
-        layout.addWidget(self.preview)
-
-        # 详情
+        card2.add_widget(self.preview)
         self.detail = QLabel()
         self.detail.setWordWrap(True)
         self.detail.setTextFormat(Qt.RichText)
         self.detail.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.detail.setStyleSheet(
-            "background:#f7f7f7; border:1px solid #e0e0e0; border-radius:6px;"
-            "padding:10px; color:#1b1b1b; font-size:13px;")
-        layout.addWidget(self.detail, 1)
+        self.detail.setObjectName("detailCard")
+        card2.add_widget(self.detail)
+        root.addWidget(card2, 1)
+        self._cards.append(card2)
 
-        # 按钮
-        btns = QHBoxLayout()
-        self.demo_btn = QPushButton("开始演示")
+        # ---------- 按钮 ----------
+        foot = QHBoxLayout()
+        foot.setSpacing(8)
+        self.demo_btn = QPushButton("▶ 开始演示")
+        self.demo_btn.setObjectName("primary")
+        self.demo_btn.setCursor(Qt.PointingHandCursor)
         self.demo_btn.clicked.connect(self._start_demo)
         apply_btn = QPushButton("保存到设置")
+        apply_btn.setCursor(Qt.PointingHandCursor)
         apply_btn.clicked.connect(self._save)
-        close_btn = QPushButton("关闭")
+        foot.addWidget(self.demo_btn)
+        foot.addWidget(apply_btn)
+        foot.addStretch(1)
+        close_btn = QPushButton("关掉")
+        close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(self.accept)
-        btns.addWidget(self.demo_btn)
-        btns.addWidget(apply_btn)
-        btns.addStretch()
-        btns.addWidget(close_btn)
-        layout.addLayout(btns)
+        foot.addWidget(close_btn)
+        root.addLayout(foot)
 
         self._update()
 
-    # ---------- 行为 ----------
+    # ---------- 基础行为 ----------
     def _set_now(self):
         self.dt_edit.setDateTime(QDateTime.currentDateTime())
 
@@ -254,19 +286,18 @@ class StatusTestDialog(QDialog):
 
     def _sim_tick(self):
         elapsed = time.monotonic() - self._sim_start
-        a, c, hold, al = (self._advance_s, self._countdown_s,
-                          self._hold_s, self._alert_s)
+        a, c = self._advance_s, self._countdown_s
+        hold, al = self._hold_s, self._alert_s
 
         if elapsed < a:
             remain = a - elapsed
-            self.preview.set_state(
-                f"距离上课 测试 · {int(remain)}s", 'upcoming',
-                _clamp01(remain / max(1.0, a)), 0.6)
+            self.preview.set_state(f"距离上课 测试 · {int(remain)}s",
+                                   'upcoming',
+                                   _clamp01(remain / max(1.0, a)), 0.6)
         elif elapsed < a + c:
             remain = a + c - elapsed
-            self.preview.set_state(
-                f"下节 测试 · {int(remain)}s", 'countdown',
-                _clamp01(remain / max(1.0, c)), 1.0)
+            self.preview.set_state(f"下节 测试 · {int(remain)}s", 'countdown',
+                                   _clamp01(remain / max(1.0, c)), 1.0)
         elif elapsed < a + c + al + hold:
             self.preview.set_state("上课了！", 'alert', 0.0, 0.9, is_end=False)
         elif elapsed < a + c + al + hold + al:
@@ -276,7 +307,6 @@ class StatusTestDialog(QDialog):
             self._demo_running = False
             self.demo_btn.setEnabled(True)
             self._update()
-        return
 
     # ---------- 静态预览 ----------
     def _update(self, *_):
@@ -290,9 +320,9 @@ class StatusTestDialog(QDialog):
         status = self.schedule.get_status(
             now, advance_minutes=advance, offset_seconds=offset)
         st = status.get('status')
-
         until_sec = status.get('until_sec')
-        if (st == 'upcoming' and until_sec is not None and until_sec <= cd_sec):
+
+        if st == 'upcoming' and until_sec is not None and until_sec <= cd_sec:
             island_state = 'countdown'
             text = f"下节 {status['course']} · {until_sec}s"
             ratio = max(0.0, min(1.0, until_sec / max(1, cd_sec)))
@@ -345,11 +375,11 @@ class StatusTestDialog(QDialog):
             except Exception:
                 printed = None
             if printed is not None:
-                effective = printed + timedelta(seconds=offset) - timedelta(
-                    minutes=advance)
+                effective = (printed + timedelta(seconds=offset)
+                             - timedelta(minutes=advance))
                 cd_at = effective - timedelta(seconds=cd_sec)
                 lines.append(f"<b>课程：</b>{status.get('course')} "
-                             f"（{p.get('name','')}）")
+                             f"（{p.get('name', '')}）")
                 lines.append(f"<b>课表时间：</b>{p['start']} - {p['end']}")
                 lines.append(f"<b>有效上课：</b>{_fmt(effective)}"
                              f"（提前 {advance} 分 / 偏移 {offset}s）")
@@ -357,10 +387,22 @@ class StatusTestDialog(QDialog):
         if st == 'upcoming' and until_sec is not None:
             lines.append(f"<b>距上课：</b>{_fmt_secs(until_sec)}")
         elif st == 'ongoing':
-            lines.append(f"<b>距下课：</b>{_fmt_secs(status.get('remain_sec', 0))}")
+            lines.append(f"<b>距下课：</b>"
+                         f"{_fmt_secs(status.get('remain_sec', 0))}")
 
         self.detail.setText("<br>".join(lines))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not getattr(self, "_played", False):
+            self._played = True
+            QTimer.singleShot(30, self, lambda: play_entrance(self._cards))
 
     def closeEvent(self, event):
         self._sim_timer.stop()
         super().closeEvent(event)
+
+    def hideEvent(self, event):
+        # 内嵌进设置窗口时切走页面也会停下模拟，避免后台定时器空转
+        self._sim_timer.stop()
+        super().hideEvent(event)

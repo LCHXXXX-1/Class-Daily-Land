@@ -51,6 +51,7 @@ class SubIsland(QWidget):
 
         self._source = 'empty'
         self._spec = None
+        self._spec_key = None
         self._length = self.DEFAULT_LEN
         self._anchor_x = 0
         self._anchor_y = 0
@@ -100,6 +101,18 @@ class SubIsland(QWidget):
         self._source = source
         self._spec = spec if source == 'plugin' else None
         self._length = length
+
+        # 新内容接管且要求保持展开（如媒体播放 auto_collapse=False）时，
+        # 自动从收起状态展开（典型场景：天气自动收起后媒体开始播放）。
+        # 同一内容持续刷新时 key 不变，不会干扰用户手动收起。
+        new_key = None
+        if source == 'plugin':
+            new_key = (id(spec.get('draw')), str(spec.get('text', '')),
+                       bool(spec.get('auto_collapse')))
+        if (new_key is not None and new_key != self._spec_key
+                and self.collapsed and not bool(spec.get('auto_collapse'))):
+            self.collapsed = False
+        self._spec_key = new_key
 
         self._update_auto_timer()
 
@@ -248,7 +261,7 @@ class SubIsland(QWidget):
         m = QMenu(self)
         m.addAction("收起" if not self.collapsed else "展开", self.toggle)
         m.addSeparator()
-        m.addAction("关闭副岛", self._disable)
+        m.addAction("隐藏副岛", self._disable)
         m.exec(event.globalPos())
 
     def _disable(self):

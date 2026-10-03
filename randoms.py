@@ -30,12 +30,12 @@ class RollCallDialog(QDialog):
         font.setBold(True)
         self.name_label.setFont(font)
         layout.addWidget(self.name_label, stretch=1)
-        self.status_label = QLabel("请打开名单文件")
+        self.status_label = QLabel("猜猜会是谁呢~")
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
         btns = QHBoxLayout()
         btns.addStretch()
-        open_btn = QPushButton("打开文件")
+        open_btn = QPushButton("选个名单")
         open_btn.setFixedSize(120, 50)
         open_btn.clicked.connect(self.open_file)
         pick_btn = QPushButton("随  机")
@@ -51,32 +51,32 @@ class RollCallDialog(QDialog):
         if os.path.isfile(DEFAULT_JSON):
             if self._load(DEFAULT_JSON):
                 self.status_label.setText(
-                    f"已自动加载 name.json（{len(self.names)} 人）")
+                    f"自动找到 name.json 啦（{len(self.names)} 人）")
 
     def open_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择名单文件", "", "JSON 文件 (*.json);;所有文件 (*.*)")
+            self, "挑一个名单文件", "", "JSON 文件 (*.json);;所有文件 (*.*)")
         if not path:
             return
         if self._load(path):
             self.status_label.setText(
-                f"已加载 {os.path.basename(path)}（{len(self.names)} 人）")
+                f"名单来啦：{os.path.basename(path)}（{len(self.names)} 人）")
 
     def _load(self, path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            QMessageBox.critical(self, "读取失败", f"无法读取文件：\n{e}")
+            QMessageBox.critical(self, "读不出来", f"这个文件读不出来：\n{e}")
             return False
         if isinstance(data, dict):
             data = data.get("names", [])
         if not isinstance(data, list):
-            QMessageBox.critical(self, "格式错误", '文件内容应为数组')
+            QMessageBox.critical(self, "格式不太对", '这个文件得是个数组才行')
             return False
         names = [str(x).strip() for x in data if str(x).strip()]
         if not names:
-            QMessageBox.critical(self, "名单为空", "文件里没有有效的名字。")
+            QMessageBox.critical(self, "名单是空的", "文件里一个能用的名字都没有。")
             return False
         self.names = names
         self.recent = []
@@ -85,7 +85,7 @@ class RollCallDialog(QDialog):
 
     def pick(self):
         if not self.names:
-            QMessageBox.information(self, "提示", "请先打开名单文件。")
+            QMessageBox.information(self, "提醒一下", "先选个名单文件吧。")
             return
         candidates = [n for n in self.names if n not in self.recent]
         if not candidates:

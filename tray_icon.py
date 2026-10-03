@@ -2,7 +2,9 @@ import os
 
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction
-from utils import ICON_PATH
+
+from paths import ICON_PATH
+from utils import APP_NAME
 
 
 class AppTray(QSystemTrayIcon):
@@ -10,6 +12,8 @@ class AppTray(QSystemTrayIcon):
                  on_holidays=None, on_weekend=None, parent=None):
         icon = QIcon(ICON_PATH) if os.path.exists(ICON_PATH) else QIcon()
         super().__init__(icon, parent)
+        self._icon = icon                 # 保引用，避免图标被回收
+
         self.app = app
         self.controller = controller
         self._on_settings = on_settings
@@ -41,20 +45,20 @@ class AppTray(QSystemTrayIcon):
         menu.addSeparator()
 
         if on_holidays is not None:
-            act_holiday = QAction("假期与调休...", menu)
+            act_holiday = QAction("假期与调休", menu)
             act_holiday.triggered.connect(on_holidays)
             menu.addAction(act_holiday)
         if on_weekend is not None:
-            act_weekend = QAction("周末作息...", menu)
+            act_weekend = QAction("周末作息", menu)
             act_weekend.triggered.connect(on_weekend)
             menu.addAction(act_weekend)
         menu.addSeparator()
 
-        act_set = QAction("设置...", menu)
+        act_set = QAction("设置", menu)
         act_set.triggered.connect(on_settings)
         menu.addAction(act_set)
 
-        act_add = QAction("添加插件...", menu)
+        act_add = QAction("安装插件", menu)
         act_add.triggered.connect(on_add_plugin)
         menu.addAction(act_add)
         menu.addSeparator()
@@ -64,7 +68,8 @@ class AppTray(QSystemTrayIcon):
         menu.addAction(act_exit)
 
         self.setContextMenu(menu)
-        self.setToolTip("Class Daily Land")
+        self._menu = menu
+        self.setToolTip(APP_NAME)
         self.activated.connect(self._on_activated)
         self.sync_state()
 
