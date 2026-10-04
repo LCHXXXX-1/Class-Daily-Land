@@ -89,6 +89,8 @@ python "Class Daily Land.py"
 
 > GitHub 上的 `LCHXXXX-1/Class-Daily-Land` 为同步镜像（源码在 `master` 分支）。
 
+> **源码运行保护**：在源码目录里直接 `python "Class Daily Land.py"` 启动时，程序会扫描程序目录及其一层子目录，检查是否存在未打包的主入口源码（`Class Daily Land.py` / `main.py` / `app.py`，或含 `if __name__ == "__main__":` 且顶层 import 了 `paths` / `theme` / `gui` / `controller` 的 py）。一旦命中，**不会拉起更新器**，而是弹出提示要求先手动备份（复制整个程序目录或先 `git commit`）；主动点“检查更新”时同样会拦截，可手动选择“仍然更新（已备份）”强制执行。打包版不受影响（主入口源码被 PyInstaller 收进 `_internal/`，扫描会跳过）。可在“通用 → 启动与更新”中关闭“源码运行保护更新”开关。
+
 ### 打包为可执行文件
 
 ```bash
@@ -133,7 +135,8 @@ class-daily-land/
 ├── tray_icon.py           # 系统托盘
 ├── agreement.py           # 用户协议对话框
 ├── about.py               # 关于对话框
-├── launch_updater.py      # 主程序 → Launcher 的启动桥
+├── launch_updater.py      # 主程序 → Launcher 的启动桥（含源码运行保护拦截点）
+├── dev_guard.py           # 源码运行保护：识别未打包的主入口 py
 ├── single_instance.py     # 单实例互斥锁
 ├── storage.py             # JSON 原子读写
 ├── paths.py               # 统一路径管理
@@ -194,6 +197,7 @@ class-daily-land/
 | `anim_fade_text` | `True` | 文字变化渐显 |
 | `anim_duration` | `320` | 动画时长（毫秒） |
 | `check_update_on_start` | `True` | 启动时检查更新 |
+| `block_update_on_source` | `True` | 源码运行保护：检测到未打包主入口时不拉起更新器（仍需手动确认） |
 | `disabled_plugins` | `[]` | 被禁用的插件目录名列表 |
 | `market_source` | `official` | 插件市场索引源：official / github / gitee |
 | `packages_source` | `gitee` | 第三方依赖包下载源：gitee / github |
@@ -327,6 +331,7 @@ def register(api):
 - **配置即时保存**：设置对话框中的大部分修改会立即写入 `settings.json` 并应用到各组件。
 - **后台任务**：市场索引同步与依赖下载全部在 worker 线程执行，通过 Qt 信号回传 UI，主线程不做阻塞网络请求。
 - **数据本地化**：值日、作业、课表、设置等全部保存在 `settings/` 目录，不上传服务器。
+- **源码运行保护**：`dev_guard.scan_source_entry()` 扫描程序目录与一层子目录（跳过 `settings/`、`plugins/`、`__pycache__/`、`_internal/` 等），命中主入口 py 后由 `launch_updater.py` 统一拦下——所有更新入口（启动静默检查、主窗口/托盘、关于页“检查更新”）都走这一个拦截点，不会有旁路。手动执行 `python dev_guard.py <目录>` 可单独打印扫描结果，便于调试。
 
 ### 仓库分支
 
@@ -361,6 +366,9 @@ A：在“课表与提醒”中打开课表管理器，点击“恢复默认课�
 
 **Q：更新检查失败？**
 A：请确认程序目录下存在 `Launcher.exe` 或 `launcher.py`。主程序本身不包含下载逻辑。
+
+**Q：我从源码运行，点了“检查更新”却没反应？**
+A：这是源码运行保护在起作用——程序目录下检测到未打包的主入口源码，会先弹窗提示你手动备份（复制整个程序目录或先 `git commit`），确认后才会拉起更新器。确实要强制更新：在弹窗里点“仍然更新（已备份）”，或在设置 → 通用 → 启动与更新关掉“源码运行保护更新”开关。
 
 **Q：为什么只能打开一个程序实例？**
 A：Class Daily Land 使用单实例锁，避免多个实例同时读写配置文件造成冲突。若需重新启动，请先退出已有实例。

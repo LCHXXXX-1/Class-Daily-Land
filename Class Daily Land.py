@@ -128,4 +128,4 @@ if __name__ == '__main__':
     print("托盘已 show()，进入事件循环")
 
     sys.exit(app.exec())
-    #才没有想被看到呢～
+    #才不是给你看的呢～
