@@ -1,12 +1,3 @@
-"""设置项描述符与行控件（全新实现）。
-
-SettingRow 以数据方式描述一个设置项；RowWidget 生成
-「左：标题 / 说明，右：控件」的标准行，并负责：
-
-- 变更即时写回（SettingsManager 或自定义 setter）并通知宿主应用
-- 从当前配置刷新控件（用于「恢复默认」）
-- 提供搜索文本与定位高亮
-"""
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QHBoxLayout,
                                QLabel, QSlider, QSpinBox, QVBoxLayout,

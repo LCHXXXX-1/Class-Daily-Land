@@ -1,4 +1,3 @@
-"""统一的 JSON 读写：带异常保护与原子写入。"""
 import os
 import json
 import tempfile

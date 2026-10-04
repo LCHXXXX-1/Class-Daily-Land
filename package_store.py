@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-"""第三方依赖包管理：列出各下载源可用的包、查“被哪些插件使用”、
-手动安装 / 卸载。
-
-只做“发现 + 安装 / 删除”，安装机制完全复用 plugin_deps
-（清单 → 多镜像下载 → sha256 校验 → 原子换入 packages/<包名>/）。
-所有网络与磁盘重活都在 worker 线程执行，通过信号回传 UI。
-"""
 import json
 import os
 import threading

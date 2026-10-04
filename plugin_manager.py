@@ -1,4 +1,3 @@
-"""插件系统：加载、生命周期、以及完整的 PluginAPI。"""
 import os
 import json
 import shutil

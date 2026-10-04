@@ -1,11 +1,3 @@
-"""状态测试（全新界面）。
-
-叠加「提前提醒 + 倒计时窗口 + 时间偏移」，实时预览灵动岛状态，
-并可整段演示「提前 → 倒计时 → 上课 → 下课」的完整过程。
-
-公共接口与旧版一致：
-    StatusTestDialog(schedule_manager, settings, controller=None, parent=None)
-"""
 import time
 from datetime import datetime, timedelta
 

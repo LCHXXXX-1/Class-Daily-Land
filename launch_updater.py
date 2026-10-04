@@ -1,13 +1,3 @@
-"""主程序 → Launcher 的启动桥。
-
-主程序不做版本比较、不做下载、不做解压。
-一切更新逻辑都由 Launcher 承担。
-
-- launch_hidden(): 启动时后台静默检查（用 Launcher.exe / launcher.py + --silent）
-- launch_visible(): 用户主动检查（用 Launcher.exe / launcher.py）
-
-优先用 exe；exe 不可用时自动回退到源码 launcher.py。
-"""
 import os
 import sys
 import subprocess

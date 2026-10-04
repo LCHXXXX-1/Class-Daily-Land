@@ -1,7 +1,3 @@
-"""副灵动岛：显示在主岛右侧，可收成圆形。
-
-内容来源：插件内容（text/icon 或自定义 draw）> 占位。
-"""
 import sys
 import time
 

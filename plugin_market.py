@@ -1,25 +1,3 @@
-"""插件市场核心：GitHub 索引同步、插件发现、版本比较、下载校验与安装。
-
-只负责“发现 / 下载 / 文件落盘”，插件的运行时加载沿用 PluginManager。
-所有网络与磁盘重活都在 worker 线程执行，通过信号回传 UI。
-
-索引来源（用户可选，格式都是同一套聚合 list.json）：
-1. 官方服务器（official，主用）
-   https://plugins.class-daily-land.de5.net/list.json
-   单个文件装下全部插件，字段见 parse_remote_list()。
-   同步成功后落盘到 cache_dir/_remote_list.json，离线 rescan 全靠它。
-2. GitHub 仓库（github）
-   plugins 分支根目录的 list.json（raw 直链 + jsDelivr 镜像）：
-   https://raw.githubusercontent.com/<用户>/<仓库>/plugins/list.json
-   落盘 cache_dir/_github_list.json。
-3. Gitee 仓库（gitee）
-   plugins 分支根目录的 list.json（raw 直链）：
-   https://gitee.com/<用户>/<仓库>/raw/plugins/list.json
-   落盘 cache_dir/_gitee_list.json。
-   注意：/blob/ 是网页地址，必须用 /raw/ 才能拿到 JSON。
-
-各来源 entry 解析后统一成同一套内部字段，下载 / 校验 / 安装逻辑完全共用，避免重复实现。
-"""
 import hashlib
 import json
 import os

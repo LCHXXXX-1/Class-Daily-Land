@@ -1,16 +1,3 @@
-"""设置界面组件库（全新实现，与旧设置代码无关）。
-
-包含：
-- ToggleSwitch       动画开关（滑块平滑滑动）
-- SegmentedControl   分段选择器（指示块平滑移动，用于主题等）
-- SectionCard        卡片容器
-- Badge              状态徽章（插件市场用）
-- StaggerPlayer      列表错峰淡入（页面切换入场动画）
-- NavRail            左侧导航（选中项高亮块平滑滑动）
-- SearchBox          搜索框
-
-所有颜色实时取自 theme.color()，自动随浅色 / 深色主题切换。
-"""
 from PySide6.QtCore import (Qt, QSize, QRectF, Property, QTimer, Signal,
                             QPropertyAnimation, QEasingCurve,
                             QAbstractAnimation)

@@ -1,7 +1,3 @@
-"""应用级协调器：持有各窗口/组件引用，集中处理设置应用与可见性联动。
-
-替代原先通过 QApplication.topLevelWidgets() + 类名字符串匹配的通信方式。
-"""
 from PySide6.QtCore import QObject, Signal
 
 

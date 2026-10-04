@@ -1,23 +1,3 @@
-"""设置窗口 V3 —— 从零全新设计（独立文件，与旧设置代码无关）。
-
-设计概念：iOS / Windows 11 混合的「设置中心」——
-- 左侧导航：每个分类一枚**彩色圆角图标瓦片 + 手绘矢量线条图标**
-  （齿轮/调色盘/胶囊/日历/购物袋/滑杆/拼图/信息，不依赖 emoji 字体），
-  选中项高亮块 + 左侧指示条平滑滑动
-- 右侧内容：大号页头 + 圆角卡片（柔和投影，随主题调透明度），
-  卡片内行间发丝分隔线；操作项为「标题 + 说明 + ›」可点行
-- 自研 AnimatedStack：页面切换 = 交叉淡入 + 14px 上滑（并行动画组），
-  告别 QStackedWidget 的生硬跳变；开关 / 分段选择器 / 滑杆全部自绘动画
-- 品牌区与关于页使用真实应用图标（icon.ico）
-- 浅色 / 深色 / Windows 11 云母材质全量适配，主题切换即时刷新
-
-功能与旧设置界面完全一致（通用 / 外观 / 灵动岛 / 课表与提醒 /
-插件市场 / 高级 / 插件页 / 关于），入口签名保持不变：
-
-    from settings_dialog_v2 import SettingsDialog
-    SettingsDialog(settings, schedule_manager=..., plugin_manager=...,
-                   controller=..., on_apply=..., parent=...)
-"""
 import math
 import os
 

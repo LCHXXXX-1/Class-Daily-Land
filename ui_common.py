@@ -1,4 +1,3 @@
-"""对话框与动画的公共工具。"""
 import sys
 import ctypes
 

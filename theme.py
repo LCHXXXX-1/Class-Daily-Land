@@ -1,13 +1,3 @@
-"""主题机制：跟随系统 / 浅色 / 深色，统一色板与 QSS 生成。
-
-用法：
-- 启动时（ClassBoard.py）：theme.init(settings) → theme.apply_theme(app)
-- 窗口级 QSS：settings_dialog / test_dialog 使用 theme.dialog_qss()
-- 代码取色：theme.color("hint") / theme.color("disabled_row_bg")
-- 主题变更回调：theme.theme_changed_connect(self._apply_theme)（弱引用）
-
-注意：灵动岛 / 副岛 / 下拉面板为深色自绘组件，不走本模块。
-"""
 import sys
 import weakref
 

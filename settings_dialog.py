@@ -1,17 +1,3 @@
-"""设置窗口（重写版）。
-
-布局：左侧导航（品牌 / 搜索 / 分组导航）+ 右侧内容区（页面标题 + 卡片列表），
-底部是「恢复本页默认 / 完成」。
-
-设计要点：
-- 所有设置项即时保存并立即生效（沿用宿主 controller.apply_settings）
-- 页面切换时卡片错峰淡入；导航高亮块平滑滑动；开关 / 分段选择器带动画
-- 支持设置项搜索：输入关键词 → 结果列表 → 点击跳转并高亮定位
-- 旧设置界面的选项全部保留，并新增了「插件市场」页
-
-入口保持不变：``from settings_dialog import SettingsDialog``，
-构造签名与旧版一致，``gui.py`` / 托盘无需改动。
-"""
 import os
 
 from PySide6.QtCore import (Qt, QTimer, QPoint, QPropertyAnimation,

@@ -1,22 +1,3 @@
-"""更新前的「源码运行」检测：只要程序目录（含一层子目录）里存在未打包的
-主入口 py 源文件，就说明当前跑在源码模式 —— 此时自动更新会把你正在改的
-源文件覆盖掉，所以默认不拉起更新器，弹窗提醒并请求确认。
-
-用法：
-- scan_source_entry(root)        -> [(绝对路径, 命中原因)]，空列表=不是源码模式
-- is_source_tree(root)           -> bool，给「关于」页显示当前运行模式
-- guard_enabled()                -> bool，读 settings.json 的
-                                    block_update_on_source（默认 True）
-
-命中判定（任一即算）：
-1. 文件名白名单：去掉空格/下划线/横线后小写，等于 classdailyland / main / app
-   （覆盖 `Class Daily Land.py`、`ClassDailyLand.py`、`main.py` …）
-2. 主入口特征：文件里同时出现 __name__ / __main__ 且 import 了本项目核心模块
-   （paths / theme / gui / controller），兜底防漏，插件不会被误判。
-
-扫描跳过 settings/ plugins/ __pycache__/ _internal/ build/ dist/ .git/ 等目录，
-所以打包版（onedir 后主入口 py 都在 _internal 里）不会命中，不会误拦。
-"""
 import os
 
 # 这些目录里出现 py 一律不看（数据目录、缓存、打包产物、虚拟环境…）
