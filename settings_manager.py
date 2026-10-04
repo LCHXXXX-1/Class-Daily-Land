@@ -41,6 +41,8 @@ DEFAULTS = {
 
     # 更新
     "check_update_on_start": True,
+    # 源码运行保护：检测到未打包的主入口 py 时不再自动更新，弹窗提醒备份
+    "block_update_on_source": True,
 
     # 插件市场
     "disabled_plugins": [],        # 被禁用的插件目录名列表

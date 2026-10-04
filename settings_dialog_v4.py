@@ -781,6 +781,8 @@ class SettingsDialog(QDialog):
         self._add_rows(page, card, [
             SettingRow("check_update_on_start", "启动时检查更新", "switch",
                        hint="由独立更新器处理，可随时手动检查"),
+            SettingRow("block_update_on_source", "源码运行保护更新", "switch",
+                       hint="检测到本地主入口源码时不再自动更新，改前先提醒备份"),
         ])
         return self._register_page("gear", "通用", page)
 
@@ -1227,6 +1229,18 @@ class SettingsDialog(QDialog):
             lbl.setObjectName("hint")
             lbl.setWordWrap(True)
             card.add_widget(lbl)
+
+        # 源码运行保护状态：一眼看出当前为什么没自动更新
+        try:
+            import dev_guard
+            from paths import APP_ROOT
+            if dev_guard.is_source_tree(APP_ROOT):
+                tip = QLabel("源码运行 · 自动更新已跳过（更新前会先提醒备份）")
+                tip.setObjectName("hint")
+                tip.setWordWrap(True)
+                card.add_widget(tip)
+        except Exception:
+            pass
 
         btn = QPushButton("检查更新")
         btn.setObjectName("primary")
