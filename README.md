@@ -7,7 +7,7 @@ Class Daily Land 是一个基于 **PySide6** 的 Windows 桌面应用，面向�
 - **当前版本**：v4.3
 - **作者**：LCHXXXX、hexwisp72
 - **反馈邮箱**：2352240265@qq.com
-
+- **Class daily land by net现已上线欢迎前往https://github.com/LCHXXXX-1/Class-Daily-Land-by-net**
 ---
 
 ## 目录
