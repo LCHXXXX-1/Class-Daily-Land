@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设置 · Class Daily Land</title>
+  <link rel="stylesheet" href="styles/tokens.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/settings.css">
+  <link rel="stylesheet" href="styles/dialogs.css">
+</head>
+<body>
+  <!-- Python 宿主专用入口：Qt 必须由它提供 qwebchannel.js，host.js 才能握手。
+       .NET (WebView2) 用 index.html 即可，那条路径不需要这个脚本。 -->
+
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="lib/icons.js"></script>
+  <script src="lib/controls.js"></script>
+  <script src="lib/editors.js"></script>
+  <script src="host.js"></script>
+  <script src="pages/dialogs.js"></script>
+  <script src="pages/market.js"></script>
+  <script src="pages/settings.js"></script>
+</body>
+</html>

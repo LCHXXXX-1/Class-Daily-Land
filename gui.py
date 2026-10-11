@@ -426,7 +426,58 @@ class ClassBoardApp(QWidget):
                 morph_rect = island.frameGeometry()
         except Exception:
             morph_rect = None
-        dlg = SettingsDialog(
+        dlg = self._make_settings_dialog(morph_rect)
+        self._settings_dlg = dlg
+        dlg.exec()
+        self._settings_dlg = None
+        dlg.deleteLater()
+
+    def _make_settings_dialog(self, morph_rect=None):
+        """挑一个能跑的设置中心。
+
+        回退链（任何一层都不允许白屏）：
+          1. QML 版（RinUI / Fluent Design，独立项目 ClassDailyLand-QML，
+             见 qml_bridge.py）；
+          2. Web 版（ui/ 那套界面 + QWebEngineView，和 .NET 版共用同一份 HTML/CSS）；
+          3. 原生 settings_dialog_v4。
+        """
+        try:
+            import qml_bridge
+            if qml_bridge.is_available():
+                qml_dlg = qml_bridge.create_dialog(
+                    self,
+                    settings=self.settings,
+                    schedule_manager=self.schedule_manager,
+                    # 二级页面（值日生 / 作业 / 插件）要用
+                    duty_manager=self.duty_manager,
+                    homework_manager=self.homework_manager,
+                    plugin_manager=self.plugin_manager,
+                    controller=self.controller,
+                    app=self,
+                )
+                if qml_dlg is not None:
+                    return qml_dlg
+        except Exception as exc:
+            print("[settings] QML 版设置中心不可用，尝试 Web 版：%s" % exc)
+
+        try:
+            import web_settings
+            if web_settings.is_available():
+                return web_settings.WebSettingsDialog(
+                    self.settings,
+                    schedule_manager=self.schedule_manager,
+                    plugin_manager=self.plugin_manager,
+                    controller=self.controller,
+                    parent=self,
+                    app=self,
+                    # 二级对话框（值日生名单 / 作业编辑器）要用
+                    duty_manager=self.duty_manager,
+                    homework_manager=self.homework_manager,
+                )
+        except Exception as exc:
+            print("[settings] Web 版设置中心不可用，改用原生窗口：%s" % exc)
+
+        return SettingsDialog(
             self.settings,
             schedule_manager=self.schedule_manager,
             plugin_manager=self.plugin_manager,
@@ -434,18 +485,39 @@ class ClassBoardApp(QWidget):
             parent=self,
             morph_from=morph_rect,
         )
-        self._settings_dlg = dlg
-        dlg.exec()
-        self._settings_dlg = None
-        dlg.deleteLater()
+
+    # 上一次应用过的、会影响「内容渲染」的设置（见 apply_main_settings）。
+    # 存的是值，不是引用 —— settings 是就地改的字典，比引用永远看不出变化。
+    _applied_content = None
 
     def apply_main_settings(self):
         self.font_size = int(self.settings.get("main_font_size", 14))
         self.apply_opacity(self.settings.get("main_opacity", 1.0))
-        self.update_display()
+
         if self.settings.get("main_auto_scroll", True):
             self._auto_scroll_timer.setInterval(
                 int(self.settings.get("main_scroll_interval", 50)))
+
+        # ★ 只有「内容」真的变了才重建作业列表。
+        #
+        #   update_display() 会先清空 homework_layout 再逐条把控件加回去，做一次
+        #   整个列表就重画一遍。而设置一变就会走到这里 —— 拖「窗口宽度 / 窗口透明度」
+        #   这种纯外观项时每秒白重建好几次，表现出来就是班级日常主窗一闪一闪。
+        #   深浅色也算在内：换主题时列表配色要跟着重刷。
+        content = (
+            self.font_size,
+            self.settings.get("main_auto_scroll", True),
+            self.settings.get("main_scroll_interval", 50),
+            self.settings.get("main_scroll_step", 2),
+            self.settings.get("main_scroll_pause", 3),
+            theme.is_dark(),
+        )
+
+        if content != self._applied_content:
+            self._applied_content = content
+            self.update_display()     # 内部已经带了 _adjust_window()
+        else:
+            self._adjust_window()     # 内容没变，但宽度可能变了
 
     def _notify_island(self):
         if self.controller is not None:

@@ -7,7 +7,7 @@ Class Daily Land 是一个基于 **PySide6** 的 Windows 桌面应用，面向�
 - **当前版本**：v4.3
 - **作者**：LCHXXXX、hexwisp72
 - **反馈邮箱**：2352240265@qq.com
-- **Class daily land by net现已上线欢迎前往https://github.com/LCHXXXX-1/Class-Daily-Land-by-net**
+
 ---
 
 ## 目录
@@ -102,6 +102,50 @@ pyinstaller -F -w -i icon.ico "Class Daily Land.py"
 ### 快捷键
 
 - `F1`：退出程序（在主窗口激活时生效）
+
+---
+
+## 设置界面（QWebEngineView）
+
+设置中心有两套实现，运行时自动挑：
+
+| 实现 | 界面来自 | 何时使用 |
+|---|---|---|
+| `web_settings.py`（`WebSettingsDialog`） | `ui/index-qt.html`（HTML/CSS，与 .NET 版**同一份**） | 默认。由 QtWebEngine 渲染 |
+| `settings_dialog_v4.py`（原有实现） | PySide6 原生控件 | 缺 QtWebEngine、或找不到 `ui/` 时 |
+
+两套提供同一批设置项，字段名与取值范围一致；界面与宿主之间走 13 个 RPC 方法
+（清单见 `ui/README.md`）。**灵动岛、副岛、班级日常主窗、下拉面板仍是原生 Qt，本次未改。**
+
+界面起不来时（脚本报错 / RPC 失败）不会只剩一片白：页面会先把外壳挂出来、
+在顶部挂一条说明原因的提示条，再把错误通过 `ui.error` 通知桥接层留档。
+
+拖动滑块时**整个窗口一闪一闪**的问题也已经修掉，根因是「设置一变就全量重做」：
+`controller.apply_settings()` 原先每次都重刷灵动岛（`apply_settings` 里带 `_push_up` + `update`）、
+重建插件内容与副岛内容、重建托盘菜单，主窗 `update_display()` 还会把作业列表清空重排 ——
+拖动滑块时每秒要走好几次。现在改成**按变化量分级**：岛相关字段一组签名、三个显示开关一组签名，
+签名没变就不做那件重活；主窗内容也只在字体 / 滚动参数 / 深浅色真的变了时才重建，
+其余情况只 `_adjust_window()` 跟一下宽度。滑块本身同样换成了 WinUI 3 规格的
+「轨道 + 强调色填充 + 外圆套内点」双层圆点（改的是共用 `ui/`，两端一起生效）。
+
+二级对话框里，**假期与调休 / 周末作息 / 值日生名单 / 作业编辑器**这四个已经改为
+在设置窗口内部以浮层打开（共用 `ui/pages/dialogs.js`），数据走 `web_settings.py` 里
+新加的那批 RPC（`schedule.holidays.*` / `schedule.weekend.*` / `duty.*` / `homework.*`）。
+值日生与作业管理器由 `gui.py` 从主窗传进 `WebSettingsDialog`
+（对应 .NET 侧注入的 `IDutyService` / `IHomeworkService`）。
+课表管理 / 课表编辑器、状态测试这两个还没搬，仍走原生 `dialog.open`。
+
+注意 Python 本地的数据是 snake_case（`as_weekday` / `morning_split`），
+桥里出境前统一转成驼峰，跟 .NET 侧保持一致 —— 同一份 HTML 要能吃下两边。
+
+自检（不需要界面、不需要联网）：
+
+```bash
+python web_settings_selftest.py
+```
+
+打包提示：`ui/` 需要作为数据文件一起带上（`--add-data "ui;ui"`），
+否则 exe 里找不到界面文件，会自动回退到原生设置窗。
 
 ---
 

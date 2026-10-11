@@ -1,0 +1,13 @@
+{
+  "name": "classdailylan-ui",
+  "private": true,
+  "description": "Class Daily Land 两个项目共用的 Web UI（设置中心 P1）",
+  "scripts": {
+    "test": "node tests/static-check.mjs && node tests/bridge.test.js && node tests/render.test.mjs",
+    "check": "node tests/static-check.mjs",
+    "render": "node tests/render.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
