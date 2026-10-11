@@ -6,7 +6,7 @@ import "../components"
 
 // 通用 —— 分区用 ColumnLayout(spacing 4) 包住「BodyStrong 标题 + 若干卡片」，
 // 与 Class Widgets 2 的 General/Index.qml 结构一致。
-FluentPage {
+PageShell {
     title: "通用"
 
     ColumnLayout {

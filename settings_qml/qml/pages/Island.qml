@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import RinUI
 import "../components"
 
-FluentPage {
+PageShell {
     title: "灵动岛"
 
     ColumnLayout {

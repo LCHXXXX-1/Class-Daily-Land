@@ -5,7 +5,7 @@ import RinUI
 import "../components"
 
 // 作业：增删条目 + 按科目分组，落到 data/settings/homework.json。
-FluentPage {
+PageShell {
     title: "作业"
 
     property var items: HomeworkStore.items()

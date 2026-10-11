@@ -6,14 +6,15 @@ import "../components"
 
 // 假期与调休：增删列表，落到 data/settings/holidays.json。
 // 演示「QML 列表 + Python 桥 + 原子写盘」这条完整链路。
-FluentPage {
-    title: ""
+SubPage {
 
     // 左侧导航只列顶层页（见 Settings.qml 的说明），子页靠这个面包屑定位 + 返回
     contentHeader: PageHeader {
+        rootTitle: "设置"
         parentTitle: "课表与提醒"
         currentTitle: "假期与调休"
         description: "假期区间与调休上课日"
+        onRootClicked: settingsWindow.gotoTitle("首页")
         onParentClicked: settingsWindow.gotoTitle("课表与提醒")
     }
 

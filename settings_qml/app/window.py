@@ -25,6 +25,7 @@ import RinUI
 from . import paths
 from .bridge import AppInfo, Config, Folders, Homework, ListStore, Plugins, ScheduleInfo
 from .extra import MarketStore, PackageBridge, StatusTester, TimetableStore, UpdaterBridge
+from .pluginpages import PluginPages
 from .services import Services
 
 # 配置里的 theme_mode → RinUI ThemeManager 的三档（注意是 Auto，不是 System）
@@ -57,6 +58,8 @@ CONTEXT_PROPERTIES: tuple[tuple[str, str], ...] = (
     ("MarketStore", "market_store"),
     ("PackageBridge", "package_bridge"),
     ("Updater", "updater"),
+    # 插件自己注册的设置页目录。名字避开所有 QML 组件文件名。
+    ("PluginPages", "plugin_pages"),
 )
 
 
@@ -115,6 +118,9 @@ class SettingsApp:
                                             plugin_manager=services.plugin_manager)
         self.updater = UpdaterBridge()
         self.paths_helper = paths.Paths()
+        # parent_window 传 None：RinUI 窗口此时还没 load，QWindow 尚未存在；
+        # 真正要弹插件设置页时由 self.root（load 后拿到的）来当父窗口。
+        self.plugin_pages = PluginPages(plugin_manager=services.plugin_manager)
 
         # 先建「不加载」的窗口，拿到引擎
         self.window = RinUI.RinUIWindow(None, shared_engine=True)
@@ -125,6 +131,9 @@ class SettingsApp:
 
         self.window.load(self.qml_path)
         self.root = self.window.root_window
+        # 插件设置页要弹原生对话框，父窗口这时才存在
+        if self.plugin_pages is not None and self.root is not None:
+            self.plugin_pages.setParentWindow(self.root)
 
         # ★ 页面里也要能拿到「导航出口」。
         #

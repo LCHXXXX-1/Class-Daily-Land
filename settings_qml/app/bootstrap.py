@@ -80,9 +80,30 @@ def bootstrap_services(py_root: str | None = None) -> Services | None:
     schedule = ScheduleManager(config_dir)
     duty = StudentOnDuty()
     homework = HomeworkManager()
-    # 只建管理器、不 load_all()：插件代码不在独立模式下执行，
-    # 市场页只需要 plugins_dir 里的 plugin.json 清单
     pm = PluginManager(plugins_dir, settings=settings)
+
+    # ★ 必须 load_all()，否则「插件管理」页永远是空的。
+    #
+    #   曾经这里写着「只建管理器、不 load_all：插件代码不在独立模式下执行」，
+    #   理由是市场页只需要 plugin.json 清单、不需要跑插件代码。这在只做市场页时成立，
+    #   但**插件的设置页是靠插件自己注册出来的**：
+    #       api.add_settings_page(title, factory, icon=...)
+    #   不执行 register() → settings_pages 恒为空 → 插件管理页列不出任何插件，
+    #   点名字也没反应（而且**零报错**：Qt 动画一个不存在的属性也是静默的）。
+    #
+    #   跑插件代码的风险（第三方插件可能有网络/子进程/异常）由 load_all 自己的
+    #   try/except 逐个兜住 —— 它本来就在主程序启动时对每个插件做同样的事。
+    #   这里还把执行结果打出来，方便独立运行时排查「插件为什么没注册」。
+    try:
+        pm.load_all()
+        for name, ok, message in getattr(pm, "loaded", []):
+            if not ok:
+                print(f"[settings] 插件 {name} 加载失败：{message}")
+        pages = len(pm.get_settings_pages())
+        print(f"[settings] 已加载插件 {len(getattr(pm, 'loaded', []))} 个，"
+              f"注册设置页 {pages} 个")
+    except Exception as exc:  # noqa: BLE001 - 插件整体出问题不该拖垮设置中心
+        print(f"[settings] 插件加载异常：{exc}")
 
     return Services(
         settings=settings,

@@ -12,14 +12,15 @@ import "../components"
 //   MarketStore.sync() 之后等 syncFinished / catalogReady；
 //   install / uninstall / updateAll 之后等 taskProgress / taskDone；
 //   依赖包安装进度从 depProgress 来（stage/text/percent）。
-FluentPage {
-    title: ""
+SubPage {
 
     // 左侧导航只列顶层页（见 Settings.qml 的说明），子页靠这个面包屑定位 + 返回
     contentHeader: PageHeader {
+        rootTitle: "设置"
         parentTitle: "插件"
         currentTitle: "插件市场"
         description: "从仓库索引安装 / 更新插件"
+        onRootClicked: settingsWindow.gotoTitle("首页")
         onParentClicked: settingsWindow.gotoTitle("插件")
     }
     id: root

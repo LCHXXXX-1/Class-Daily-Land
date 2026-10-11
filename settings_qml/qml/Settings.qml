@@ -15,6 +15,10 @@ FluentWindow {
     minimumWidth: 900
     minimumHeight: 620
 
+    // 转场接管要等NavigationView 把 StackView 建出来，
+    // 所以推迟一拍（见 installHorizontalTransition 的说明）。
+    Component.onCompleted: Qt.callLater(installHorizontalTransition)
+
     /// 用于页面入口的面包屑和旧调用方的标题直达。
     readonly property var pageTable: [
         { title: "课表管理", parent: "课表与提醒", page: Paths.qml("pages/Timetable.qml") },
@@ -22,6 +26,7 @@ FluentWindow {
         { title: "值日生名单", parent: "课表与提醒", page: Paths.qml("pages/Duty.qml") },
         { title: "状态测试", parent: "课表与提醒", page: Paths.qml("pages/StatusTest.qml") },
         { title: "本地插件", parent: "插件", page: Paths.qml("pages/Plugins.qml") },
+        { title: "插件设置", parent: "插件", page: Paths.qml("pages/PluginHub.qml") },
         { title: "插件市场", parent: "插件", page: Paths.qml("pages/Market.qml") },
         { title: "依赖包管理", parent: "插件", page: Paths.qml("pages/Packages.qml") }
     ]
@@ -94,6 +99,121 @@ FluentWindow {
         navigationView.safePush(navigationView.currentPage, true, false, {})
     }
 
+    /// ★ 把 StackView 的转场换成Windows 11 设置那种「横向推进」。
+    ///
+    /// RinUI 自带的 replaceEnter / replaceExit 是**纵向**的：新页从
+    /// pushEnterFromY（半屏高）往上浮、旧页原地淡出 —— 像模态对话框，
+    ///不像系统设置里那种「点子项，右边那页推进来，左边这页往左退掉」。
+    ///
+    /// stackView 是 NavigationView 的内部 id（id: stackView），没有对外暴露，
+    /// 只能从子对象里捞。它是 NavigationView 视觉树里唯一同时有
+    /// depth / currentItem 的那个，靠这两条确认捞对了。
+    ///
+    /// 注意：转场里的动画**不写 target** —— Transition 里这是标准惯用法，
+    /// Qt 会自动作用到「本次被替换的那个 item」上。写了 target 反而容易
+    /// 指错对象（新页/旧页是两个 item）。
+    ///
+    /// 页面自身（SubPage）那层只留内容淡入，位移全交给这里 —— 两层都做位移会晃。
+    function installHorizontalTransition() {
+        var sv = findStackView()
+        if (sv === null) {
+            console.warn("[settings] 没找到 StackView，沿用默认转场")
+            return
+        }
+        sv.replaceEnter = horizontalEnter
+        sv.replaceExit = horizontalExit
+        // push / pop 目前都走 safePush → stackView.replace，上面两个已覆盖；
+        // 一并设上是为了万一以后走了别的路径又变回纵向。
+        sv.pushEnter = horizontalEnter
+        sv.popExit = horizontalExit
+        transitionDiag.installed = true
+        transitionDiag.sameEnter = (sv.replaceEnter === horizontalEnter)
+        transitionDiag.sameExit = (sv.replaceExit === horizontalExit)
+    }
+
+    /// 转场安装状态的自检出口（给 tools/transition_probe.py 读）。
+    /// 为什么需要它：Transition 装没装上、装的是不是同一个对象，
+    /// 从 Python 侧看全是 undefined，只能让 QML 自己回答。
+    property var transitionDiag: ({ installed: false, sameEnter: false, sameExit: false })
+
+    /// 新页从右侧推进来。
+    ///
+    /// ★ 这里动画的是 `slideIn`（SubPage 上的自定义属性），**不是 x**。
+    ///   直接动画 x 无效：RinUI 的 FluentPage 在 StackView 里由布局托管，
+    ///   外部写进去的 x 会被布局覆盖回0（字面常量、StackView.view.width
+    ///   都试过，一律不动）。改为驱动页面自己的进度属性，再由 SubPage
+    ///   把进度换算成内部 contentItem.x —— 那里的 x 是可写的。
+    ///   详见 components/SubPage.qml 顶部的注释。
+    readonly property Transition horizontalEnter: Transition {
+        SequentialAnimation {
+            PropertyAction { property: "slideIn"; value: 1 }
+            PropertyAnimation {
+                property: "slideIn"
+                from: 1
+                to: 0
+                duration: 260
+                easing.type: Easing.OutCubic
+            }
+        }
+        SequentialAnimation {
+            PropertyAction { property: "slideOut"; value: 0 }
+            PropertyAction { property: "opacity"; value: 0 }
+            PauseAnimation { duration: 60 }
+            PropertyAnimation {
+                property: "opacity"
+                from: 0
+                to: 1
+                duration: 190
+                easing.type: Easing.OutCubic
+            }
+        }
+    }
+
+    /// 旧页向左让位并淡出 —— 与新页成对，才有「推进」而不是「浮现」的感觉。
+    readonly property Transition horizontalExit: Transition {
+        SequentialAnimation {
+            PropertyAction { property: "slideOut"; value: 0 }
+            PropertyAnimation {
+                property: "slideOut"
+                from: 0
+                to: 1
+                duration: 260
+                easing.type: Easing.OutCubic
+            }
+        }
+        SequentialAnimation {
+            PropertyAction { property: "opacity"; value: 1 }
+            PauseAnimation { duration: 50 }
+            PropertyAnimation {
+                property: "opacity"
+                from: 1
+                to: 0
+                duration: 200
+                easing.type: Easing.InCubic
+            }
+        }
+    }
+
+    /// 在 NavigationView 里找到那个 StackView。
+    ///
+    /// 路径是确定的，不用遍历视觉树：
+    ///     NavigationView ── alias navigationBar ──> NavigationBar
+    ///                   ── stackView 属性 ─────> StackView
+    /// （NavigationBar 那一行是 `stackView: stackView`，RinUI 自己把它透出来的。）
+    ///
+    /// ★ 之前这里是「递归 childItems 找同时有 depth/currentItem 的节点」，
+    ///   结果**永远返回 null**，installHorizontalTransition() 第一行就 return 了，
+    ///   横向转场根本没装上—— 而外观上却「看不出异常」，因为 RinUI 自带的
+    ///   纵向转场和 SubPage 自己的淡入照常在跑，opacity 曲线完全正常。
+    ///   也就是说：这套转场代码空跑了很久，是靠属性探针（tools/transition_check.py）
+    ///   让 QML 自报 installed=false 才查出来的。教训是**别用启发式遍历找对象**。
+    function findStackView() {
+        var bar = navigationView ? navigationView.navigationBar : null
+        var sv = bar ? bar.stackView : null
+        if (!sv) console.warn("[settings] navigationBar.stackView 取不到，转场装不上")
+        return sv || null
+    }
+
     navigationItems: [
         {
             title: "首页",
@@ -160,6 +280,11 @@ FluentWindow {
             page: Paths.qml("pages/Plugins.qml"),
             expanded: true,
             subItems: [
+                {
+                    title: "插件设置",
+                    page: Paths.qml("pages/PluginHub.qml"),
+                    icon: "ic_fluent_puzzle_piece_20_regular"
+                },
                 {
                     title: "插件市场",
                     page: Paths.qml("pages/Market.qml"),

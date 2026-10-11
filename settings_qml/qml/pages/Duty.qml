@@ -5,14 +5,15 @@ import RinUI
 import "../components"
 
 // 值日生名单：增删姓名，落到 data/settings/name.json（与源项目同名同格式）。
-FluentPage {
-    title: ""
+SubPage {
 
     // 左侧导航只列顶层页（见 Settings.qml 的说明），子页靠这个面包屑定位 + 返回
     contentHeader: PageHeader {
+        rootTitle: "设置"
         parentTitle: "课表与提醒"
         currentTitle: "值日生名单"
         description: "值日轮流安排"
+        onRootClicked: settingsWindow.gotoTitle("首页")
         onParentClicked: settingsWindow.gotoTitle("课表与提醒")
     }
 

@@ -15,6 +15,8 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from .qmlcompat import py as _py
+
 
 def _import_py(name: str):
     """导入 ClassDailyLand-Py 的模块；没有就返回 None（调用方走不可用分支）。"""
@@ -34,9 +36,15 @@ def _norm_timetable(schedule: Any, periods: Any, timetable: Any):
     校验逻辑（时间格式、节次上限、课程截断）跟主程序完全同源 ——
     这里不自己造一套规则，免得两处标准慢慢长岔。
     返回 (规范化对象, "") 或 (None, 错误信息)。
+
+    ★ 入参必须先过 `_py()`：QML 的 JS 数组 / 传到 "QVariant" 槽上是
+      **QJSValue 而不是 list / dict**，而 normalize_timetable 用
+      isinstance(..., list/dict) 校验 —— 不转就必然判成
+      「少了节次信息」/「课程内容格式不太对」，表现就是课表永远存不进去。
+      详见 qmlcompat.py 的说明。
     """
     ok, norm, err = schedule.normalize_timetable({
-        "periods": periods, "timetable": timetable})
+        "periods": _py(periods), "timetable": _py(timetable)})
     return (norm, "") if ok else (None, err or "课表数据没有通过校验")
 
 
@@ -147,6 +155,89 @@ class TimetableStore(QObject):
         self.changed.emit()
         return {"ok": True}
 
+    # ---------------- 周末课表 ----------------
+    #
+    # ★ 周末**不走timetable**，而是走data['weekend'] 里的独立字段：
+    #   morning_split      —— 上午/下午分界（默认 12:00），决定哪些节次算上午
+    #   afternoon_periods  —— 周末专属的下午节次（上午沿用日常课表）
+    #   courses            —— 周末课程（周六周日共用一份）
+    #   见 ScheduleManager.courses_for / periods_for 里d.weekday() >= 5 分支。
+    #
+    #   以前QML 那边把周六周日当成 timetable 的 5/6 两列来编辑，
+    #   而后端读的是 weekend.courses —— 两套数据互不相通，
+    #   结果就是「课表里填了周末课，灵动岛还是显示今日无课」。现在对齐。
+
+    @Slot(result="QVariantMap")
+    def weekend(self) -> dict[str, Any]:
+        if self._schedule is None:
+            return {"morningSplit": "12:00", "afternoonPeriods": [],
+                    "courses": [], "available": False}
+        wk = self._schedule.get_weekend()
+        return {
+            "morningSplit": str(wk.get("morning_split") or "12:00"),
+            "afternoonPeriods": [dict(p) for p in
+                                 (wk.get("afternoon_periods") or [])
+                                 if isinstance(p, dict)],
+            "courses": [str(c) for c in (wk.get("courses") or [])],
+            # 周末实际有几节：上午（按分界切日常节次）+ 下午专属节次
+            "periodCount": len(self._schedule._weekend_periods()),
+            "available": True,
+        }
+
+    @Slot(str, "QVariant", "QVariant", result="QVariantMap")
+    def saveWeekend(self, morning_split: Any, afternoon_periods: Any,
+                    courses: Any) -> dict[str, Any]:
+        """保存周末作息与课程。时间格式沿用 normalize_periods 的同一套校验。"""
+        if self._schedule is None:
+            return _err("课表服务不可用")
+        split = str(_py(morning_split) or "12:00").strip()
+        periods_in = _py(afternoon_periods)
+        courses_in = _py(courses)
+
+        # 时间格式校验直接用主程序那份 valid_hhmm，不自己写正则 ——
+        # 两处规则一旦分叉，导入导出和这里的保存就会给出不同结论。
+        valid_hhmm = getattr(self._mod, "valid_hhmm", None)
+        if valid_hhmm is None:
+            return _err("课表服务不可用")
+
+        if not isinstance(periods_in, list):
+            return _err("下午节次格式不对")
+        if not isinstance(courses_in, list):
+            return _err("周末课程格式不对")
+
+        periods: list[dict[str, str]] = []
+        for i, p in enumerate(periods_in):
+            if not isinstance(p, dict):
+                continue
+            start = str(p.get("start") or "").strip()
+            end = str(p.get("end") or "").strip()
+            if not start and not end:
+                continue                      # 空行直接跳过
+            if not (valid_hhmm(start) and valid_hhmm(end)):
+                return _err(f"第{i + 1} 个下午节次的时间格式应为 HH:MM")
+            if end <= start:
+                return _err(f"第{i + 1} 个下午节次的结束时间要晚于开始时间")
+            periods.append({
+                "name": str(p.get("name") or f"下午{i + 1}"),
+                "start": start, "end": end,
+            })
+        if len(periods) > 12:
+            return _err("下午节次最多12 个")
+
+        names = [str(c).strip() for c in courses_in if str(c).strip()]
+        if len(names) > 20:
+            return _err("周末最多20 节课")
+
+        if not valid_hhmm(split):
+            return _err("上下午分界时间格式应为 HH:MM")
+
+        try:
+            self._schedule.set_weekend(split, periods, names)
+        except Exception as exc:  # noqa: BLE001
+            return _err(f"保存失败：{exc}")
+        self.changed.emit()
+        return {"ok": True}
+
     # ---------------- 导入 / 导出 ----------------
 
     @Slot(str, str, str, result="QVariantMap")
@@ -233,8 +324,10 @@ class TimetableStore(QObject):
     def setTempAdjust(self, date: str, courses: Any) -> dict[str, Any]:
         if self._schedule is None:
             return _err("课表服务不可用")
-        items = [str(c).strip() for c in (courses or [])
-                 if str(c).strip()] if isinstance(courses, list) else []
+        # QML 用 split(/[，,]/) 切出来的是 JS 数组 → 收到的是 QJSValue，必须先转
+        raw = _py(courses)
+        items = [str(c).strip() for c in raw if str(c).strip()] \
+            if isinstance(raw, list) else []
         self._schedule.set_temp_adjust(date.strip(), items)
         self.changed.emit()
         return {"ok": True}

@@ -14,14 +14,15 @@ import "../components"
 //
 // 数据全走 TimetableStore（委托主程序 ScheduleManager），写入前在 Python
 // 侧过 normalize_timetable 校验 —— 界面不做格式裁剪，不另立规则。
-FluentPage {
-    title: ""
+SubPage {
 
     // 左侧导航只列顶层页（见 Settings.qml 的说明），子页靠这个面包屑定位 + 返回
     contentHeader: PageHeader {
+        rootTitle: "设置"
         parentTitle: "课表与提醒"
         currentTitle: "课表管理"
         description: "当前课表、节次时间与导入导出"
+        onRootClicked: settingsWindow.gotoTitle("首页")
         onParentClicked: settingsWindow.gotoTitle("课表与提醒")
     }
     id: root
@@ -33,7 +34,18 @@ FluentPage {
     property string tipText: ""
     property bool tipIsError: true
 
-    readonly property var dayNames: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    // ---- 周末课表（独立数据，不属于任何一张日常课表）----
+    property var weekendSplit: "12:00"
+    property var weekendAfternoon: []       // [{name,start,end}]
+    property var weekendCourses: []         // ["数学", ...]
+    property int weekendPeriodCount: 0
+    property bool weekendAvailable: false
+
+    // ★ 只留周一~周五 —— 周末课表是**另一套数据**（ScheduleManager.data["weekend"]：
+    //   上下午分界 + 下午专属节次 + 一份共用课程），不走 timetable 的5/6 两列。
+    //   以前这里硬塞 7 天、周末写进 timetable，而后端读 weekend.courses，
+    //   两套数据互不相通 → 填了周末课灵动岛还是「今日无课」。
+    readonly property var dayNames: ["周一", "周二", "周三", "周四", "周五"]
     readonly property int cellWidth: 110
 
     Component.onCompleted: {
@@ -44,6 +56,7 @@ FluentPage {
         } else {
             tables = []
         }
+        loadWeekend()
     }
 
     function loadDetail(doc) {
@@ -51,7 +64,7 @@ FluentPage {
             return { name: p.name || "", start: p.start || "", end: p.end || "" }
         }) : []
         var tt = {}
-        for (var d = 0; d < 7; d++) tt[String(d)] = []
+        for (var d = 0; d < 5; d++) tt[String(d)] = []   // 只周一~周五，周末另设
         if (doc && doc.timetable) {
             for (var key in doc.timetable) tt[key] = doc.timetable[key].slice()
         }
@@ -69,6 +82,53 @@ FluentPage {
     function setTip(text, isError) {
         tipText = text
         tipIsError = isError !== false
+    }
+
+    function loadWeekend() {
+        if (!TimetableStore.isAvailable()) {
+            weekendAvailable = false
+            return
+        }
+        var w = TimetableStore.weekend()
+        weekendAvailable = w.available === true
+        weekendSplit = w.morningSplit || "12:00"
+        weekendAfternoon = (w.afternoonPeriods || []).map(function (p) {
+            return { name: p.name || "", start: p.start || "", end: p.end || "" }
+        })
+        weekendCourses = (w.courses || []).slice()
+        weekendPeriodCount = w.periodCount || 0
+    }
+
+    function saveWeekend() {
+        var result = TimetableStore.saveWeekend(
+            weekendSplit, weekendAfternoon, weekendCourses)
+        setTip(result.ok ? "已保存周末课表" : (result.error || "保存失败"),
+               result.ok)
+        if (result.ok) loadWeekend()
+    }
+
+    function addWeekendPeriod() {
+        var list = weekendAfternoon.slice()
+        list.push({ name: "下午" + (list.length + 1), start: "", end: "" })
+        weekendAfternoon = list
+    }
+
+    function removeWeekendPeriod(index) {
+        var list = weekendAfternoon.slice()
+        list.splice(index, 1)
+        weekendAfternoon = list
+    }
+
+    function addWeekendCourse() {
+        var list = weekendCourses.slice()
+        list.push("")
+        weekendCourses = list
+    }
+
+    function removeWeekendCourse(index) {
+        var list = weekendCourses.slice()
+        list.splice(index, 1)
+        weekendCourses = list
     }
 
     ColumnLayout {
@@ -274,7 +334,7 @@ FluentPage {
             }
         }
 
-        Text { typography: Typography.Body; text: "每日课程（一列一天，按节次顺序从上往下）" }
+        Text { typography: Typography.Body; text: "周一至周五课程（一列一天，按节次顺序从上往下）" }
 
         Frame {
             Layout.fillWidth: true
@@ -283,7 +343,7 @@ FluentPage {
 
             Flickable {
                 anchors.fill: parent
-                contentWidth: 7 * (root.cellWidth + 6) + 36
+                contentWidth: 5 * (root.cellWidth + 6) + 36
                 contentHeight: root.editPeriods.length * 72 + 44
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -295,7 +355,7 @@ FluentPage {
                     RowLayout {
                         spacing: 6
                         Repeater {
-                            model: 7
+                            model: 5
                             delegate: Text {
                                 required property int index
                                 Layout.preferredWidth: root.cellWidth
@@ -317,7 +377,7 @@ FluentPage {
                             spacing: 6
 
                             Repeater {
-                                model: 7
+                                model: 5
 
                                 delegate: TextField {
                                     required property int index
@@ -342,6 +402,225 @@ FluentPage {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // ================= 周末课表 =================
+        //  周末走的是ScheduleManager.data["weekend"]，跟上面任何一张日常课表无关，
+        //  所以单独成块、单独保存。上午节次沿用当前课表（按分界时间切分），
+        //  下午节次在这里单独加 —— 周末通常只上半天。
+        Text { typography: Typography.BodyStrong; text: "周末课表" }
+
+        Text {
+            Layout.fillWidth: true
+            wrapMode: Text.Wrap
+            typography: Typography.Caption
+            color: Theme.currentTheme.colors.textSecondaryColor
+            text: root.weekendAvailable
+                  ? "周六周日共用一份课程。上午沿用当前课表的节次（按下面的分界时间切成上午/下午），下午用下面单独设的节次。当前周末共 " + root.weekendPeriodCount + " 节。"
+                  : "课表服务不可用，周末课表无法读取或保存。"
+        }
+
+        Frame {
+            Layout.fillWidth: true
+            padding: 16
+            visible: root.weekendAvailable
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Text {
+                        text: "上下午分界"
+                        color: Theme.currentTheme.colors.textSecondaryColor
+                    }
+
+                    ComboBox {
+                        id: weekendSplitBox
+                        Layout.preferredWidth: 110
+                        // 常见分界点；实际值以保存的为准，不在列表里也能显示
+                        model: ["11:00", "11:30", "12:00", "12:30", "13:00", "14:00"]
+                        editable: true
+                        currentValue: root.weekendSplit
+                        onAccepted: root.weekendSplit = currentValue
+                        onActivated: root.weekendSplit = currentValue
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Text {
+                        text: "分界之前算上午，之后算下午"
+                        typography: Typography.Caption
+                        color: Theme.currentTheme.colors.textSecondaryColor
+                    }
+                }
+
+                // ---- 下午专属节次 ----
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: "下午节次"
+                        Layout.preferredWidth: 72
+                        color: Theme.currentTheme.colors.textSecondaryColor
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        typography: Typography.Caption
+                        color: Theme.currentTheme.colors.textSecondaryColor
+                        text: root.weekendAfternoon.length === 0
+                              ? "没设额外的下午节次 —— 周末只上午上课。"
+                              : "共 " + root.weekendAfternoon.length + " 节"
+                    }
+
+                    Button {
+                        text: "加一节"
+                        onClicked: root.addWeekendPeriod()
+                    }
+                }
+
+                Repeater {
+                    model: root.weekendAfternoon
+
+                    delegate: RowLayout {
+                        required property var modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Text {
+                            Layout.preferredWidth: 24
+                            color: Theme.currentTheme.colors.textSecondaryColor
+                            text: (index + 1) + "."
+                        }
+
+                        TextField {
+                            Layout.preferredWidth: 120
+                            text: modelData.name
+                            placeholderText: "下午" + (index + 1)
+                            onTextEdited: {
+                                var list = root.weekendAfternoon.slice()
+                                var item = Object.assign({}, list[index])
+                                item.name = text
+                                list[index] = item
+                                root.weekendAfternoon = list
+                            }
+                        }
+
+                        TextField {
+                            Layout.preferredWidth: 90
+                            text: modelData.start
+                            placeholderText: "14:00"
+                            onTextEdited: {
+                                var list = root.weekendAfternoon.slice()
+                                var item = Object.assign({}, list[index])
+                                item.start = text
+                                list[index] = item
+                                root.weekendAfternoon = list
+                            }
+                        }
+
+                        TextField {
+                            Layout.preferredWidth: 90
+                            text: modelData.end
+                            placeholderText: "14:45"
+                            onTextEdited: {
+                                var list = root.weekendAfternoon.slice()
+                                var item = Object.assign({}, list[index])
+                                item.end = text
+                                list[index] = item
+                                root.weekendAfternoon = list
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Button {
+                            text: "删这节"
+                            onClicked: root.removeWeekendPeriod(index)
+                        }
+                    }
+                }
+
+                // ---- 周末课程 ----
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    Layout.topMargin: 6
+
+                    Text {
+                        text: "周末课程"
+                        Layout.preferredWidth: 72
+                        color: Theme.currentTheme.colors.textSecondaryColor
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        typography: Typography.Caption
+                        color: Theme.currentTheme.colors.textSecondaryColor
+                        text: root.weekendCourses.length === 0
+                              ? "还没填周末课程 —— 不填的话周末就是无课。"
+                              : "共 " + root.weekendCourses.length + " 节，从上往下对应上面的节次"
+                    }
+
+                    Button {
+                        text: "加一节"
+                        onClicked: root.addWeekendCourse()
+                    }
+                }
+
+                Repeater {
+                    model: root.weekendCourses
+
+                    delegate: RowLayout {
+                        required property string modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Text {
+                            Layout.preferredWidth: 24
+                            color: Theme.currentTheme.colors.textSecondaryColor
+                            text: (index + 1) + "."
+                        }
+
+                        TextField {
+                            Layout.fillWidth: true
+                            text: modelData
+                            placeholderText: "课程名"
+                            onTextEdited: {
+                                var list = root.weekendCourses.slice()
+                                list[index] = text
+                                root.weekendCourses = list
+                            }
+                        }
+
+                        Button {
+                            text: "删这节"
+                            onClicked: root.removeWeekendCourse(index)
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 6
+
+                    Item { Layout.fillWidth: true }
+
+                    Button {
+                        text: "保存周末课表"
+                        highlighted: true
+                        enabled: root.weekendAvailable
+                        onClicked: root.saveWeekend()
                     }
                 }
             }

@@ -7,14 +7,15 @@ import "../components"
 // 依赖包管理（完整版）：插件声明的第三方依赖（plugins/packages/ 下的包）。
 // 列表 = 远端目录（按当前下载源）+ 本地安装状态 + 「谁在用」；下载源在
 // 「本地插件」页设置。安装走主程序 PackageStore（校验 / 原子换入同源）。
-FluentPage {
-    title: ""
+SubPage {
 
     // 左侧导航只列顶层页（见 Settings.qml 的说明），子页靠这个面包屑定位 + 返回
     contentHeader: PageHeader {
+        rootTitle: "设置"
         parentTitle: "插件"
         currentTitle: "Packages"
         description: "插件依赖的第三方包"
+        onRootClicked: settingsWindow.gotoTitle("首页")
         onParentClicked: settingsWindow.gotoTitle("插件")
     }
     id: root

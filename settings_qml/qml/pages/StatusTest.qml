@@ -11,14 +11,15 @@ import "../components"
 //     test_dialog.IslandPreview（#1c1c1e 胶囊 / #0a84ff 进度 / #30d158 在上）；
 //   · 情景演示 —— 嵌入主程序时驱动**真实灵动岛**跑一轮（提前 → 倒计时 →
 //     上课 → 下课 → 恢复），同时本地同步演出；独立模式只演本地预览。
-FluentPage {
-    title: ""
+SubPage {
 
     // 左侧导航只列顶层页（见 Settings.qml 的说明），子页靠这个面包屑定位 + 返回
     contentHeader: PageHeader {
+        rootTitle: "设置"
         parentTitle: "课表与提醒"
         currentTitle: "状态测试"
         description: "试算一节课的状态变化"
+        onRootClicked: settingsWindow.gotoTitle("首页")
         onParentClicked: settingsWindow.gotoTitle("课表与提醒")
     }
     id: root

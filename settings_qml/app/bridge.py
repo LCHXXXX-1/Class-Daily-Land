@@ -32,6 +32,7 @@ from typing import Any
 from PySide6.QtCore import Property, QObject, QUrl, Signal, Slot
 
 from . import __version__, paths, schema
+from .qmlcompat import py as _py
 from .store import read_json, write_json_atomic
 
 SETTINGS_FILE = paths.CONFIG_DIR / "settings.json"
@@ -355,6 +356,24 @@ class AppInfo(QObject):
     def platform(self) -> str:
         return sys.platform
 
+    @Slot(result=bool)
+    def motionEnabled(self) -> bool:
+        """系统「动画效果」是否开着（Qt 6.5+ 有关闭后durationScale 为 0）。
+
+        QML 侧读不到 QStyleHints，只能由 Python 查一次。
+        RinUI 的 theme/appearance 里没有这个开关，所以别去那儿找。
+        """
+        try:
+            from PySide6.QtGui import QGuiApplication  # noqa: PLC0415
+
+            app = QGuiApplication.instance()
+            if app is None:
+                return True
+            scale = app.styleHints().animationDurationScale()
+            return float(scale) > 0.0
+        except Exception:  # noqa: BLE001 - 拿不到就当作「有动画」，UI 不该因此坏掉
+            return True
+
 
 # ============================================================== 目录 / 插件 / 作业
 
@@ -610,6 +629,9 @@ class ListStore(QObject):
 
     @Slot(str, "QVariant", result=bool)
     def add(self, name: str, item: Any) -> bool:
+        # QML 传的是 JS 字符串 / JS 对象 → 收到 QJSValue，先转成Python 原生结构，
+        # 否则下面 isinstance(item, dict) 一律不成立（详见 qmlcompat.py）。
+        item = _py(item)
         if name == "duty" and self._duty is not None:
             text = str(item).strip()
             if not text:

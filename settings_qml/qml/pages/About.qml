@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import RinUI
 import "../components"
 
-FluentPage {
+PageShell {
     title: "关于"
 
     readonly property string version: AppInfo.version()

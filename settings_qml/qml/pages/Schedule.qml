@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import RinUI
 import "../components"
 
-FluentPage {
+PageShell {
     title: "课表与提醒"
 
     ColumnLayout {

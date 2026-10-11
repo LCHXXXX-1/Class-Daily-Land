@@ -4,7 +4,7 @@ import QtQuick.Layouts
 import RinUI
 import "../components"
 
-FluentPage {
+PageShell {
     title: "插件"
 
     property var plugins: PluginStore.list()
@@ -19,6 +19,18 @@ FluentPage {
         }
 
         // 左侧导航只列顶层页（见 Settings.qml），子页从这一页的入口行进
+        Clip {
+            Layout.fillWidth: true
+            Layout.minimumHeight: 64
+
+            ClipItem {
+                anchors.fill: parent
+                iconName: "ic_fluent_puzzle_piece_20_regular"
+                title: "插件设置"
+                onActivated: settingsWindow.openPage("pages/PluginHub.qml")
+            }
+        }
+
         Clip {
             Layout.fillWidth: true
             Layout.minimumHeight: 64
