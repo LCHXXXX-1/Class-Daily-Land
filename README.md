@@ -68,10 +68,10 @@ Class Daily Land 是一个基于 **PySide6** 的 Windows 桌面应用，面向�
 - **操作系统**：Windows 10 / 11
   灵动岛的置顶、全屏检测、Office 前台检测、云母材质依赖 Win32 API，其他平台部分功能受限。
 - **Python**：3.8 及以上
-- **依赖库**：PySide6
+- **依赖库**：PySide6、RinUI（QML 设置界面）
 
 ```bash
-pip install PySide6
+pip install PySide6 RinUI
 ```
 
 ---
@@ -83,7 +83,7 @@ pip install PySide6
 ```bash
 git clone https://gitee.com/lchxxxx/class-daily-land.git
 cd class-daily-land
-pip install PySide6
+pip install PySide6 RinUI
 python "Class Daily Land.py"
 ```
 
@@ -94,7 +94,7 @@ python "Class Daily Land.py"
 ### 打包为可执行文件
 
 ```bash
-pyinstaller -F -w -i icon.ico "Class Daily Land.py"
+pyinstaller -F -w -i icon.ico --add-data "settings_qml;settings_qml" --collect-all RinUI "Class Daily Land.py"
 ```
 
 打包后请确保 `_internal/version.json` 或根目录下的 `version.json` 存在，以便“关于”页面正确显示版本号；“关于”页的版本号实际读取 `settings/config.json` 中的 `version` 字段。
@@ -105,46 +105,53 @@ pyinstaller -F -w -i icon.ico "Class Daily Land.py"
 
 ---
 
-## 设置界面（QWebEngineView）
+## 设置界面（QML + RinUI）
 
-设置中心有两套实现，运行时自动挑：
+设置中心由本项目内的 `settings_qml/` 提供，采用 Class Widgets 2 的
+FluentWindow 导航外壳，并继续使用 Class Daily Land 自己的设置页与服务绑定。
+RinUI 是 QML 控件依赖；若界面缺失或启动失败，会回退到原生设置窗口：
+源项目的 MIT 许可与适配说明见 `settings_qml/third_party/`。
 
 | 实现 | 界面来自 | 何时使用 |
 |---|---|---|
-| `web_settings.py`（`WebSettingsDialog`） | `ui/index-qt.html`（HTML/CSS，与 .NET 版**同一份**） | 默认。由 QtWebEngine 渲染 |
-| `settings_dialog_v4.py`（原有实现） | PySide6 原生控件 | 缺 QtWebEngine、或找不到 `ui/` 时 |
+| `qml_bridge.py` → QML 版 | `settings_qml/qml/`（本地页面 + RinUI 组件库），云母背板 | 默认 |
+| `settings_dialog_v4.py`（原有实现） | PySide6 原生控件 | QML 项目找不到 / RinUI 缺失 / 装配失败时兜底 |
 
-两套提供同一批设置项，字段名与取值范围一致；界面与宿主之间走 13 个 RPC 方法
-（清单见 `ui/README.md`）。**灵动岛、副岛、班级日常主窗、下拉面板仍是原生 Qt，本次未改。**
+原先的第二层「Web 版」（`web_settings.py` + `ui/` 那套 HTML，与 .NET 版共用同一份）
+**已从回退链移除**，文件仍留在仓库里，需要时按 `gui.py::_make_settings_dialog`
+里的顺序加回来即可。
 
-界面起不来时（脚本报错 / RPC 失败）不会只剩一片白：页面会先把外壳挂出来、
-在顶部挂一条说明原因的提示条，再把错误通过 `ui.error` 通知桥接层留档。
+`settings_qml/` 已随项目一起提供，不再要求把另一个项目放在旁边。
+正常运行加载项目内版本；开发时设置 `CDL_QML_SETTINGS_DIR` 可显式覆盖，
+无效覆盖路径会记录提示并回退到项目内版本。
 
-拖动滑块时**整个窗口一闪一闪**的问题也已经修掉，根因是「设置一变就全量重做」：
-`controller.apply_settings()` 原先每次都重刷灵动岛（`apply_settings` 里带 `_push_up` + `update`）、
-重建插件内容与副岛内容、重建托盘菜单，主窗 `update_display()` 还会把作业列表清空重排 ——
-拖动滑块时每秒要走好几次。现在改成**按变化量分级**：岛相关字段一组签名、三个显示开关一组签名，
-签名没变就不做那件重活；主窗内容也只在字体 / 滚动参数 / 深浅色真的变了时才重建，
-其余情况只 `_adjust_window()` 跟一下宽度。滑块本身同样换成了 WinUI 3 规格的
-「轨道 + 强调色填充 + 外圆套内点」双层圆点（改的是共用 `ui/`，两端一起生效）。
+### 数据是穿透的，不是副本
 
-二级对话框里，**假期与调休 / 周末作息 / 值日生名单 / 作业编辑器**这四个已经改为
-在设置窗口内部以浮层打开（共用 `ui/pages/dialogs.js`），数据走 `web_settings.py` 里
-新加的那批 RPC（`schedule.holidays.*` / `schedule.weekend.*` / `duty.*` / `homework.*`）。
-值日生与作业管理器由 `gui.py` 从主窗传进 `WebSettingsDialog`
-（对应 .NET 侧注入的 `IDutyService` / `IHomeworkService`）。
-课表管理 / 课表编辑器、状态测试这两个还没搬，仍走原生 `dialog.open`。
+设置界面读写的就是主程序运行时的那一批对象（`gui.py` 把 `settings_manager` /
+`schedule` / `StudentOnDuty` / `homework` / `plugin_manager` / `controller` 传进去）：
 
-注意 Python 本地的数据是 snake_case（`as_weekday` / `morning_split`），
-桥里出境前统一转成驼峰，跟 .NET 侧保持一致 —— 同一份 HTML 要能吃下两边。
+- 改设置 → 落盘 + `controller.apply_settings()`（主窗 / 灵动岛 / 托盘同步刷新）
+- 改主题 → `theme.apply_theme()`，主窗跟着变色
+- 课表 / 值日生 / 作业 / 插件市场 / 依赖包 → 直接操作主程序的管理器与信号
 
-自检（不需要界面、不需要联网）：
+两个键挂在课表服务上、不在 `settings.json` 里，界面层已做映射：
+`schedule_advance_minutes`、`schedule_time_offset_seconds`。
+
+窗口按 `ApplicationModal` + 局部事件循环实现模态，**不用 QWidget 容器**——
+RinUI 的云母背板挂在顶层窗口 HWND 上，塞进容器背板就没了。
+
+**灵动岛、副岛、班级日常主窗、下拉面板仍是原生 Qt，本次未改。**
+
+### 自检（不需要界面、不需要联网）
 
 ```bash
-python web_settings_selftest.py
+python web_settings_selftest.py         # Web 版桥的回归网（文件仍在，随时能加回回退链）
+python settings_qml/tools/selftest.py   # QML 版五组自检
 ```
 
-打包提示：`ui/` 需要作为数据文件一起带上（`--add-data "ui;ui"`），
+打包提示：要把 QML 页面、图标和 RinUI 资源带进包，例如
+`--add-data "settings_qml;settings_qml" --collect-all RinUI`；
+`ui/` 的 `--add-data "ui;ui"` 只在把 Web 版加回回退链时才需要；
 否则 exe 里找不到界面文件，会自动回退到原生设置窗。
 
 ---
@@ -164,7 +171,7 @@ class-daily-land/
 ├── settings_dialog.py     # 设置界面（基础版，前代实现）
 ├── settings_dialog_v2.py  # 设置界面（动画版，前代实现）
 ├── settings_dialog_v3.py  # 设置界面（Fluent 版，前代实现）
-├── settings_dialog_v4.py  # 设置界面（当前使用的分层版）
+├── settings_dialog_v4.py  # 设置界面（QML 版不可用时的兜底）
 ├── settings_widgets.py    # 自绘控件库（开关/分段/卡片/徽章/导航等）
 ├── settings_rows.py       # 设置行与行控件（滑块/下拉/输入/开关）
 ├── theme.py               # 主题色板与 QSS 生成

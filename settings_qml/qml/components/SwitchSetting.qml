@@ -1,0 +1,93 @@
+import QtQuick
+import QtQuick.Layouts
+import RinUI
+
+// 开关设置行：SettingCard（图标 + 标题 + 说明 + 右侧控件）+ Switch。
+//
+// 读一次、写回一次 —— 不做双向绑定。这跟 Class Widgets 2 的
+// `Configs.data.x` + `Configs.set(...)` 是同一个模型：
+// 控件持有初值，用户操作时写回，避免了「写回 → 通知 → 再写回」的回环。
+SettingCard {
+    id: root
+
+    property string settingKey: ""
+    property bool value: Config.get(root.settingKey, false)
+    property bool inverted: false        // 为 true 时开关语义取反（如「不再自动更新」）
+
+    Layout.fillWidth: true
+
+    // ---- 进场：错峰上浮（只动 transform，不动 opacity） ---------------------
+    //  同一页里的设置行依次上浮（延迟按同页顺序递增，最多 8 档），
+    //  比整页一起动更有「内容在装配」的感觉 —— 借的是 CW2 卡片列的观感。
+    //  ★ 只动 transform，不动 opacity：动画计时器一旦不推进，位移最多差 8px
+    //  （看不出来），而淡入卡住会让整页内容彻底消失。
+    readonly property int appearIndex: {
+        // 向上找到第一个有多个孩子的祖先，用它算顺序
+        //（ClipItem 常被包在 Clip 里，直接看 parent.children 永远是 0）
+        var node = root
+        while (node && node.parent && node.parent.children && node.parent.children.length <= 1) {
+            node = node.parent
+        }
+        return (node && node.parent && node.parent.children) ? node.parent.children.indexOf(node) : 0
+    }
+
+    Component.onCompleted: {
+        // 窗口可见才做上浮动画；页面可能是在窗口显示前就建好的，
+        // 那时动画计时器不一定推进（实测会停在中途）。
+        var win = root.Window.window
+        if (win && win.visible) {
+            appearShift.y = 8
+            appear.delay = Math.min(root.appearIndex, 8) * 34
+            appear.start()
+        }
+        // 兜底无条件挂上：不管动不动画，超时后都把位移收回 0
+        appearGuard.restart()
+    }
+
+    // ★ 兜底：动画计时器没推进时（离屏 / 窗口最小化 / 软件后端 / 页面在窗口
+    //   显示前就建好）把 8px 的位移收回。动画只是锦上添花，绝不能决定
+    //   「内容看不看得见」—— 所以这一版只做位移、不做淡入：
+    //   实测淡入一旦卡住，整页设置行会停在 opacity 0（只剩一排空卡片外壳）。
+    Timer {
+        id: appearGuard
+        interval: 620 + Math.min(root.appearIndex, 8) * 34
+        onTriggered: {
+            // ★ 先 stop：还在跑的动画对属性有更高优先级，直接赋值会被它盖回去
+            appear.stop()
+            appearShift.y = 0
+        }
+    }
+
+    // 用 per-property transform（Qt 6.9 起 Transform 元素已被移除）
+    transform: Translate {
+        id: appearShift
+        y: 8
+    }
+
+    ParallelAnimation {
+        id: appear
+        NumberAnimation {
+            target: appearShift
+            property: "y"
+            to: 0
+            duration: 380
+            easing.type: Easing.OutQuart
+        }
+    }
+
+    Switch {
+        id: control
+        checked: root.inverted ? !root.value : root.value
+        // RinUI 的 Switch 默认会显示 On / Off 文案（contentItem 里的占位符 + 文本）。
+        // 行标题已经在左边说清楚了，这里把两段文案清空 = 只留一个干净的开关（WinUI 的样子）。
+        checkedText: ""
+        uncheckedText: ""
+        // root.enabled 是卡片级的（调用方用它禁整行），加上 isKeyLocked 这一层
+        enabled: root.enabled && !Config.isKeyLocked(root.settingKey)
+
+        onToggled: {
+            root.value = root.inverted ? !checked : checked
+            Config.set(root.settingKey, root.value)
+        }
+    }
+}

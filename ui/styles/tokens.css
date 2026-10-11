@@ -1,118 +1,63 @@
 /* ============================================================================
- *  tokens.css —— 设计令牌（Fluent / RinUI）
+ *  tokens.css —— WinUI 3 设计令牌
  *  ---------------------------------------------------------------------------
- *  变量名与 WinUI 3 的 XAML 资源键、以及 RinUI（Class Widgets 2 的组件库）
- *  的 themes/*.qml 逐项对应，方便对照排查。
+ *  变量名尽量与 WinUI 3 的 XAML 资源键对应（CardBackgroundFillColorDefault /
+ *  TextFillColorPrimary / ControlStrokeColorDefault …），两端宿主（WPF + WebView2、
+ *  PySide6 + QWebEngineView）拿到 Web 层后，要换皮只需改这一个文件。
  *
- *  取值来源（不是拍脑袋配的）：
- *    · RinUI  RinUI/themes/{light,dark,theme,utils}.qml、RinUI/utils/Typography.qml
- *    · WinUI 3 (Windows App SDK) Light / Dark 默认主题资源
- *  两者的颜色本来就是同一套 —— RinUI 的 controlFillColor #FFFFFFB2、
- *  cardColor #FFFFFFB2、textColor #1b1b1b、dividerBorderColor #00000014、
- *  backgroundColor #F3F3F3 与本文件逐字节一致。
- *  真正的差异在**几何、字体阶梯、动效时长与构图**，那几项本版才对齐过去。
- *
- *  要换皮、要接系统强调色，只改这一个文件。
+ *  值取自 WinUI 3 (Windows App SDK) 的 Light / Dark 默认主题资源，不是拍脑袋配的。
  * ==========================================================================*/
 
 :root {
-  /* ---------------------------------------------------------------- 字体 */
-  /* RinUI Utils.fontFamily 在 Windows 上是 "Microsoft YaHei"；这里保持
-     Segoe UI Variable 优先（Win11 原生观感），中文回落雅黑。 */
+  /* ---------- 字体 ---------- */
   --font-family-text: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI",
     "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --font-family-display: "Segoe UI Variable Display", "Segoe UI Variable Text",
     "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  --font-family-mono: "Cascadia Mono", Consolas, "Courier New", monospace;
 
-  /* ---- 字体阶梯：照 RinUI Typography 的 8 档，字号 / 行高 / 字重逐项对齐 ---- */
-  --font-size-display: 68px;      --line-height-display: 92px;      /* Display    */
-  --font-size-title-large: 40px;  --line-height-title-large: 52px;  /* TitleLarge */
-  --font-size-title: 28px;        --line-height-title: 36px;        /* Title      */
-  --font-size-subtitle: 20px;     --line-height-subtitle: 28px;     /* Subtitle   */
-  --font-size-body-large: 18px;   --line-height-body-large: 24px;   /* BodyLarge  */
-  --font-size-body: 14px;         --line-height-body: 20px;         /* Body       */
-  --font-size-body-strong: 14px;  --line-height-body-strong: 20px;  /* BodyStrong */
-  --font-size-caption: 12px;      --line-height-caption: 16px;      /* Caption    */
+  --font-size-caption: 12px;   --line-height-caption: 16px;
+  --font-size-body: 14px;      --line-height-body: 20px;
+  --font-size-body-large: 18px; --line-height-body-large: 24px;
+  --font-size-subtitle: 20px;  --line-height-subtitle: 28px;
+  --font-size-title: 28px;     --line-height-title: 36px;
 
-  --weight-regular: 400;   /* Normal   */
+  --weight-regular: 400;
   --weight-medium: 500;
-  --weight-demibold: 600;  /* DemiBold —— BodyStrong / BodyLarge / 标题 */
-  --weight-semibold: 600;  /* 兼容旧名，与 demibold 同值 */
+  --weight-semibold: 600;
 
-  /* ------------------------------------------------------------ 形状与度量 */
-  /* 圆角照 RinUI themes/light.qml：buttonRadius 5 / smallRadius 3 / windowRadius 7。
-     卡片与浮层比 Win11 设置默认的 4px 更圆（CW2 的卡片观感更柔和）。 */
-  --control-corner-radius: 5px;   /* RinUI buttonRadius */
-  --small-corner-radius: 3px;     /* RinUI smallRadius  */
-  --window-corner-radius: 7px;    /* RinUI windowRadius */
-  --overlay-corner-radius: 7px;   /* 对话框 / 浮出层（RinUI Dialog 用 windowRadius） */
-  --card-corner-radius: 8px;      /* CW2 Frame / SettingCard 的 8px 圆角 */
-  --tile-corner-radius: 8px;      /* 图标磁贴 */
-  --stroke-width: 1px;            /* RinUI borderWidth */
-
-  /* ---- 控件尺寸：照 RinUI 各组件里写死的真实数值 ---- */
-  --control-height: 32px;         /* RinUI Button ≈ max(text+12, 32) */
+  /* ---------- 形状与度量 ---------- *
+   *  圆角对齐 Class Widgets 2 / RinUI：控件 6px、卡片 12px、浮层 14px，
+   *  比 Win11 设置的 4px 更柔和（CW2 的卡片观感）。 */
+  --control-corner-radius: 6px;
+  --overlay-corner-radius: 14px;     /* 对话框、浮出层 */
+  --card-corner-radius: 12px;
+  --tile-corner-radius: 9px;         /* 图标磁贴（链接行、分区头） */
+  --control-height: 32px;
   --control-height-sm: 28px;
-  --switch-width: 40px;           /* RinUI Switch 40×20 */
-  --switch-height: 20px;
-  --slider-handle-size: 20px;     /* RinUI sliderHandleSize */
-  --progress-bar-height: 3px;     /* RinUI ProgressBar：轨道 1 / 指示条 3 */
+  --row-min-height: 62px;
+  --stroke-width: 1px;
 
-  /* ---- 窗口镶边：RinUI windowTitleBarHeight 48；CtrlBtn 实测 48×40、无间隙 ---- */
-  --titlebar-height: 48px;
-  --caption-button-width: 48px;
-  --caption-button-height: 40px;
+  --nav-width: 264px;
+  --content-max-width: 980px;
 
-  /* ---- 设置行 / 卡片：照 CW2 ClipItem.qml 与 RinUI SettingCard/SettingItem ---- */
-  --setting-row-height: 64px;     /* ClipItem implicitHeight */
-  --setting-row-pad-left: 22px;   /* ClipItem leftMargin  */
-  --setting-row-pad-right: 16px;  /* ClipItem rightMargin */
-  --setting-row-gap: 14px;        /* ClipItem RowLayout spacing */
-  --setting-row-icon: 22px;       /* ClipItem Icon 22×22 */
-  --setting-card-pad-x: 18px;     /* RinUI SettingCard left/right 18 */
-  --setting-card-pad-y: 16px;     /* RinUI SettingCard top/bottom 16 */
-  --setting-card-gap: 16px;       /* RinUI SettingCard RowLayout spacing 16 */
-  --setting-card-icon: 22px;      /* RinUI SettingCard icon 22 */
-  --setting-item-min-height: 50px;/* RinUI SettingItem = 32 内容 + 9 + 9 */
-  --list-row-height: 70px;        /* CW2 Clip 列表行（插件 / 提供商） */
-
-  /* ---- 导航：RinUI NavigationView 侧栏 200–400，缓存最优宽 280 ---- */
-  --nav-width: 280px;
-  --nav-min-width: 200px;
-  --nav-max-width: 400px;
-  --nav-item-height: 40px;        /* NavigationItem 40（按钮 37） */
-  --nav-item-height-inner: 37px;
-  --nav-item-icon: 19px;          /* NavigationItem icon size */
-  --nav-item-inset: 11px;         /* NavigationItem Row leftMargin */
-  --nav-sub-indent: 34px;         /* NavigationSubItem 额外缩进（45 vs 11） */
-  --nav-indicator-width: 3px;     /* Indicator 竖条 3px */
-  --nav-indicator-height: 17px;   /* currentItemHeight 40 - 23 */
-
-  --content-max-width: 1000px;    /* CW2 wrapperWidth = min(width-84, 1000) */
-  --content-pad-x: 42px;          /* CW2 两侧各 42px */
-
-  /* ---------------------------------------------------------------- 动效 */
-  /* 时长取自 RinUI themes/utils.qml；曲线照它实际用的 Qt Easing：
-       颜色 / 外观 → OutQuart，几何 / 位移 → OutQuint。 */
-  --duration-faster: 167ms;       /* animationSpeedFaster —— Frame 透明度 */
-  --duration-fast: 167ms;         /* 兼容旧名 */
-  --duration-appearance: 187ms;   /* appearanceSpeed —— 状态色 / 主题色 */
-  --duration-theme: 187ms;        /* 深浅色交叉淡入 */
-  --duration-normal: 250ms;       /* animationSpeed —— 开关 / 指示器 / 列表增删 */
-  --duration-expander: 333ms;     /* animationSpeedExpander */
-  --duration-surface: 350ms;      /* 大块表面换色 */
-  --duration-mid: 667ms;          /* animationSpeedMiddle —— 页面推进 / 对话框缩放 */
-  --duration-progress: 1550ms;    /* progressBarAnimationSpeed —— 不确定进度条 */
+  /* ---------- 动效 ---------- *
+   * 曲线与时长取自 Fluent 设计系统（RinUI 的 187 / 200 / 250 / 333 / 667ms
+   * 与 OutQuart / OutQuint 一组）—— 深浅色切换、悬停、进出场全部走这几个，
+   * 界面看起来才是「同一个东西在动」而不是各动各的。 */
+  --duration-fast: 167ms;        /* 状态色微调、图标 */
+  --duration-appearance: 187ms;  /* 界面切换：按钮 / 导航 / 文本变色 */
+  --duration-theme: 200ms;       /* 深浅色交叉淡入（所有颜色属性） */
+  --duration-normal: 250ms;      /* 通用（开关、指示器） */
+  --duration-surface: 350ms;     /* 大块表面换色、卡片抬升 */
+  --duration-mid: 667ms;         /* 指示条长出、对话框缩放 */
 
   --ease-standard: cubic-bezier(0, 0, 0, 1);
   --ease-decelerate: cubic-bezier(0.1, 0.9, 0.2, 1);
-  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);    /* 颜色类默认 */
-  --ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);        /* 几何类默认 */
+  --ease-out-quart: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
   --ease-in-out-quart: cubic-bezier(0.77, 0, 0.175, 1);
-  --ease-in-out-quint: cubic-bezier(0.86, 0, 0.07, 1);
-  --ease-liquid: cubic-bezier(0.175, 0.885, 0.32, 1.2);    /* 带一点回弹 */
+  --ease-liquid: cubic-bezier(0.175, 0.885, 0.32, 1.2);   /* 带一点回弹 */
 }
 
 /* ============================ 浅色主题（默认） ============================ */
@@ -120,53 +65,43 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  /* 背景层（RinUI backgroundColor / backgroundAcrylicColor） */
+  /* 背景层（Mica 之上的实体/半透明填充） */
   --solid-background-fill-color-base: #f3f3f3;
   --solid-background-fill-color-secondary: #eeeeee;
   --solid-background-fill-color-tertiary: #f9f9f9;
   --solid-background-fill-color-quarternary: #ffffff;
-  --background-acrylic-color: #f9f9f9;
   --layer-fill-color-default: rgba(255, 255, 255, 0.5);
   --layer-fill-color-alt: rgba(255, 255, 255, 0.54);
   --layer-on-acrylic-fill-color-default: rgba(255, 255, 255, 0.5);
 
-  /* 卡片（RinUI cardColor / cardSecondaryColor / cardBorderColor） */
+  /* 卡片 */
   --card-background-fill-color-default: rgba(255, 255, 255, 0.7);
   --card-background-fill-color-secondary: rgba(246, 246, 246, 0.5);
-  --card-background-fill-color-tertiary: #ffffff;
   --card-stroke-color-default: rgba(0, 0, 0, 0.0578);
   --card-stroke-color-default-solid: #ebebeb;
   --divider-stroke-color-default: rgba(0, 0, 0, 0.0803);
 
-  /* 控件（RinUI controlFillColor / controlColor / controlBorderColor） */
+  /* 控件 */
   --control-fill-color-default: rgba(255, 255, 255, 0.7);
   --control-fill-color-secondary: rgba(249, 249, 249, 0.5);
   --control-fill-color-tertiary: rgba(249, 249, 249, 0.3);
-  --control-fill-color-quarternary: rgba(243, 243, 243, 0.76);
   --control-fill-color-disabled: rgba(249, 249, 249, 0.3);
-  --control-input-active-color: #ffffff;
   --control-stroke-color-default: rgba(0, 0, 0, 0.0578);
   --control-stroke-color-secondary: rgba(0, 0, 0, 0.1622);
   --control-strong-stroke-color-default: rgba(0, 0, 0, 0.4458);
   --control-strong-fill-color-default: rgba(0, 0, 0, 0.4458);
-  /* 极淡的行悬停 / 选中填充（RinUI controlAlt* / subtle*） */
-  --control-alt-secondary-fill-color: rgba(0, 0, 0, 0.0241);
-  --control-alt-tertiary-fill-color: rgba(0, 0, 0, 0.0578);
-  --control-alt-quarternary-fill-color: rgba(0, 0, 0, 0.0924);
-  --control-solid-color: #ffffff;
   --subtle-fill-color-secondary: rgba(0, 0, 0, 0.0373);
   --subtle-fill-color-tertiary: rgba(0, 0, 0, 0.0241);
 
-  /* 文字（RinUI textColor / textSecondaryColor / textTertialyColor） */
-  --text-fill-color-primary: #1b1b1b;
+  /* 文字 */
+  --text-fill-color-primary: #1b1b1b;             /* RinUI light textColor */
   --text-fill-color-secondary: rgba(0, 0, 0, 0.6063);
   --text-fill-color-tertiary: rgba(0, 0, 0, 0.4458);
   --text-fill-color-disabled: rgba(0, 0, 0, 0.3614);
   --text-on-accent-fill-color-primary: #ffffff;
   --text-on-accent-fill-color-secondary: rgba(255, 255, 255, 0.7);
 
-  /* 强调色：沿用 Windows 原生蓝（应用是 Windows 桌面工具，跟系统一致）。
-     RinUI 默认是 #605ed2，想换成 CW2 那个紫，只改这三行。 */
+  /* 强调色 */
   --accent-fill-color-default: #005fb8;
   --accent-fill-color-secondary: rgba(0, 95, 184, 0.9);
   --accent-fill-color-tertiary: rgba(0, 95, 184, 0.8);
@@ -174,42 +109,33 @@
   --accent-text-fill-color-primary: #005fb8;
   --accent-text-fill-color-tertiary: rgba(0, 95, 184, 0.5);
 
-  /* 语义色（RinUI system*Color，与 WinUI 一致） */
+  /* 语义色 */
   --system-fill-color-success: #0f7b0f;
   --system-fill-color-caution: #9d5d00;
   --system-fill-color-critical: #c42b1c;
-  --system-fill-color-neutral: #8d8d8d;
+  --system-fill-color-neutral: rgba(0, 0, 0, 0.4458);
   --system-fill-color-attention: #005fb8;
-  /* 语义色浅底（RinUI system*BackgroundColor）—— InfoBar / 徽章用 */
-  --system-fill-color-success-bg: #dff6dd;
-  --system-fill-color-caution-bg: #fff4ce;
-  --system-fill-color-critical-bg: #fde7e9;
-  --system-fill-color-neutral-bg: #f9f9f9;
-  --system-fill-color-attention-bg: #fbfbfb;
 
-  /* 焦点（RinUI focusBorderOuter / Inner） */
+  /* 焦点与阴影（RinUI：dialog 0.19/64/32、flyout 0.14/24/8、cardRest 0.04/4/2） */
   --focus-stroke-color-outer: rgba(0, 0, 0, 0.8956);
-  --focus-stroke-color-inner: #ffffff;
-
-  /* 高度层级：RinUI 每档只有一段（无 spread）：0 {offsetY} {blur} 0 {color} */
-  --elevation-card-rest: 0 2px 4px rgba(0, 0, 0, 0.04);
-  --elevation-card-hover: 0 2px 4px rgba(0, 0, 0, 0.04);
-  --elevation-tooltip: 0 4px 8px rgba(0, 0, 0, 0.14);
-  --elevation-flyout: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --focus-stroke-color-inner: rgba(255, 255, 255, 0.7);
   --flyout-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
-  --elevation-dialog: 0 32px 64px rgba(0, 0, 0, 0.19);
+
+  /* 高度层级：越「浮」的层阴影越散、偏移越大（Fluent 的 elevation 常识） */
+  --elevation-card-rest: 0 1px 2px rgba(0, 0, 0, 0.045), 0 2px 6px rgba(0, 0, 0, 0.03);
+  --elevation-card-hover: 0 2px 4px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.07);
+  --elevation-flyout: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --elevation-dialog: 0 32px 64px rgba(0, 0, 0, 0.19), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --elevation-tooltip: 0 4px 8px rgba(0, 0, 0, 0.14);
 
   /* 顶边内高光：卡片/按钮上沿那道很淡的亮线，是 Fluent 控件「有厚度」的关键 */
   --hairline-highlight: rgba(255, 255, 255, 0.72);
+  /* 半透明卡片背后那层「抬起来的底」 */
   --card-underlay: rgba(255, 255, 255, 0.6);
+  /* 卡片 hover 时叠的一层提亮 */
   --card-hover-tint: rgba(255, 255, 255, 0.5);
-  /* 遮罩（RinUI backgroundSmokeColor 0.3） */
+  /* 遮罩（对话框 / 内嵌面板） */
   --smoke: rgba(0, 0, 0, 0.3);
-  /* 窗口关闭键悬停（RinUI captionCloseColor） */
-  --caption-close-color: #c42b1c;
-  --caption-close-text-color: #ffffff;
-  /* 英雄区渐隐遮罩用的底色（与窗口背景一致） */
-  --hero-fade-color: 243, 243, 243;
 }
 
 /* ================================ 深色主题 ================================ */
@@ -220,37 +146,29 @@
   --solid-background-fill-color-secondary: #1c1c1c;
   --solid-background-fill-color-tertiary: #282828;
   --solid-background-fill-color-quarternary: #2c2c2c;
-  --background-acrylic-color: #2c2c2c;
   --layer-fill-color-default: rgba(58, 58, 58, 0.3);
   --layer-fill-color-alt: rgba(0, 0, 0, 0.1);
   --layer-on-acrylic-fill-color-default: rgba(0, 0, 0, 0.5);
 
   --card-background-fill-color-default: rgba(255, 255, 255, 0.0512);
-  --card-background-fill-color-secondary: rgba(255, 255, 255, 0.0326);
-  --card-background-fill-color-tertiary: rgba(255, 255, 255, 0.0698);
+  --card-background-fill-color-secondary: rgba(255, 255, 255, 0.0329);
   --card-stroke-color-default: rgba(0, 0, 0, 0.1);
   --card-stroke-color-default-solid: #1c1c1c;
   --divider-stroke-color-default: rgba(255, 255, 255, 0.0837);
 
   --control-fill-color-default: rgba(255, 255, 255, 0.0605);
   --control-fill-color-secondary: rgba(255, 255, 255, 0.0837);
-  --control-fill-color-tertiary: rgba(255, 255, 255, 0.0326);
-  --control-fill-color-quarternary: rgba(255, 255, 255, 0.0605);
+  --control-fill-color-tertiary: rgba(255, 255, 255, 0.0329);
   --control-fill-color-disabled: rgba(255, 255, 255, 0.0419);
-  --control-input-active-color: rgba(30, 30, 30, 0.7);
   --control-stroke-color-default: rgba(255, 255, 255, 0.0698);
   --control-stroke-color-secondary: rgba(255, 255, 255, 0.093);
   --control-strong-stroke-color-default: rgba(255, 255, 255, 0.5442);
   --control-strong-fill-color-default: rgba(255, 255, 255, 0.5442);
-  --control-alt-secondary-fill-color: rgba(0, 0, 0, 0.1);
-  --control-alt-tertiary-fill-color: rgba(255, 255, 255, 0.0419);
-  --control-alt-quarternary-fill-color: rgba(255, 255, 255, 0.0698);
-  --control-solid-color: #454545;
   --subtle-fill-color-secondary: rgba(255, 255, 255, 0.0605);
   --subtle-fill-color-tertiary: rgba(255, 255, 255, 0.0419);
 
   --text-fill-color-primary: #ffffff;
-  --text-fill-color-secondary: rgba(255, 255, 255, 0.6047);
+  --text-fill-color-secondary: rgba(255, 255, 255, 0.786);
   --text-fill-color-tertiary: rgba(255, 255, 255, 0.5442);
   --text-fill-color-disabled: rgba(255, 255, 255, 0.3628);
   --text-on-accent-fill-color-primary: #000000;
@@ -266,31 +184,24 @@
   --system-fill-color-success: #6ccb5f;
   --system-fill-color-caution: #fce100;
   --system-fill-color-critical: #ff99a4;
-  --system-fill-color-neutral: #9f9f9f;
+  --system-fill-color-neutral: rgba(255, 255, 255, 0.5442);
   --system-fill-color-attention: #60cdff;
-  --system-fill-color-success-bg: #393d1b;
-  --system-fill-color-caution-bg: #433519;
-  --system-fill-color-critical-bg: #442726;
-  --system-fill-color-neutral-bg: #333333;
-  --system-fill-color-attention-bg: #2e2e2e;
 
-  --focus-stroke-color-outer: #ffffff;
-  --focus-stroke-color-inner: rgba(0, 0, 0, 0.7);
+  --focus-stroke-color-outer: rgba(255, 255, 255, 0.7);
+  --focus-stroke-color-inner: rgba(0, 0, 0, 0.8);
+  --flyout-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 
-  --elevation-card-rest: 0 2px 4px rgba(0, 0, 0, 0.04);
-  --elevation-card-hover: 0 2px 4px rgba(0, 0, 0, 0.04);
-  --elevation-tooltip: 0 4px 8px rgba(0, 0, 0, 0.14);
-  --elevation-flyout: 0 8px 24px rgba(0, 0, 0, 0.14);
-  --flyout-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
-  --elevation-dialog: 0 32px 64px rgba(0, 0, 0, 0.37);
+  /* 深色下阴影要更重才看得出来（背景本来就暗） */
+  --elevation-card-rest: 0 1px 2px rgba(0, 0, 0, 0.24), 0 2px 6px rgba(0, 0, 0, 0.18);
+  --elevation-card-hover: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.34);
+  --elevation-flyout: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --elevation-dialog: 0 32px 64px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --elevation-tooltip: 0 4px 8px rgba(0, 0, 0, 0.45);
 
   --hairline-highlight: rgba(255, 255, 255, 0.055);
   --card-underlay: rgba(255, 255, 255, 0.03);
   --card-hover-tint: rgba(255, 255, 255, 0.04);
   --smoke: rgba(0, 0, 0, 0.3);
-  --caption-close-color: #c42b1c;
-  --caption-close-text-color: #ffffff;
-  --hero-fade-color: 32, 32, 32;
 }
 
 /* ============================================================================
@@ -300,12 +211,14 @@
  *  颜色令牌本来就是同一批属性（背景 / 文字 / 描边 / 图标填充 / 阴影）。
  *
  *  做法：切换的那一瞬给 <html> 挂上 data-theme-anim，让**所有元素**的颜色类属性
- *  按 187ms OutQuart（RinUI appearanceSpeed + OutQuart）过渡；240ms 后摘掉。
+ *  按 200ms OutQuart 过渡；260ms 后把这个属性摘掉。
  *  为什么不做成常驻的 —— 常驻意味着每个元素的每次颜色变化都要过一次过渡引擎，
- *  而真正需要过渡的时机只有换主题这一下；用开关属性把代价限制在那 240ms 里。
+ *  而真正需要过渡的时机只有换主题这一下；用开关属性把代价限制在那 260ms 里。
+ *  （RinUI / Class Widgets 2 用的是同一套曲线与量级：颜色 200ms OutQuart、
+ *    大块表面 350ms OutQuint、界面切换 187ms。）
  *
- *  注意 transition-property 里**不放** transform / width：滑块位置由一个 --pct
- *  驱动，带上这些属性会让拖动变粘。
+ *  注意 transition-property 里**不放** transform / width —— 滑块的位置由一个
+ *  --pct 驱动，带上这些属性会让拖动变粘。
  * ==========================================================================*/
 html[data-theme-anim],
 html[data-theme-anim] * {
@@ -338,7 +251,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 细滚动条：RinUI scrollBarWidth 6 + padding 3 */
+/* 细滚动条：RinUI 的 6px + 3px 透明边（悬停时展开到整条） */
 ::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-thumb {
   background: var(--control-strong-fill-color-default);

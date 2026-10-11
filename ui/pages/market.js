@@ -595,7 +595,7 @@ window.CDLMarket = (function () {
     //  骨架
     // ================================================================
 
-    root.appendChild(el("section", { class: "group" }, [
+    root.appendChild(el("section", { class: "card-group" }, [
       el("div", { class: "card" }, [
         el("div", { class: "card-pad" }, [
           el("div", { class: "hstack" }, [syncBtn, rescanBtn, updateAllBtn, openDirBtn]),
@@ -604,18 +604,18 @@ window.CDLMarket = (function () {
         ]),
         banner,
       ]),
-      el("h3", { class: "group-head", text: "插件市场" }),
+      el("h3", { class: "group-title is-section", text: "插件市场" }),
       marketEmpty,
       marketList,
     ]));
 
-    root.appendChild(el("section", { class: "group" }, [
-      el("h3", { class: "group-head", text: "已安装的插件" }),
+    root.appendChild(el("section", { class: "card-group" }, [
+      el("h3", { class: "group-title is-section", text: "已安装的插件" }),
       localList,
     ]));
 
-    root.appendChild(el("section", { class: "group" }, [
-      el("h3", { class: "group-head", text: "第三方包管理" }),
+    root.appendChild(el("section", { class: "card-group" }, [
+      el("h3", { class: "group-title is-section", text: "第三方包管理" }),
       el("p", { class: "group-note", text: "第三方依赖由插件在 plugin.json 的 requires 中声明，安装插件时会自动准备。" }),
       el("div", { class: "card" }, [
         el("div", { class: "card-pad" }, [
@@ -632,8 +632,8 @@ window.CDLMarket = (function () {
       packList,
     ]));
 
-    root.appendChild(el("section", { class: "group" }, [
-      el("h3", { class: "group-head", text: "运行日志" }),
+    root.appendChild(el("section", { class: "card-group" }, [
+      el("h3", { class: "group-title is-section", text: "运行日志" }),
       logBox,
     ]));
 

@@ -1,15 +1,7 @@
 // ============================================================================
-//  controls.js —— Fluent / RinUI 构件的 DOM 构造器
+//  controls.js —— WinUI 3 控件的 DOM 构造器
 //  每个函数返回一个元素；事件回调把「用户改成了什么」回给页面。
 //  这些构件与宿主无关 —— 换成 WebView2 还是 QWebEngineView 都不改一行。
-//
-//  几何全部照 RinUI 源码（见 styles/tokens.css 顶部的来源说明），
-//  构件的分层也照 Class Widgets 2 的用法：
-//    group()       分区（Text BodyStrong 标题 + 若干卡片）
-//    settingCard() 一张卡一项设置（图标 22 + 标题 Body + 描述 Caption + 右侧动作）
-//    settingItem() 卡内密集行（≥50 高、可选箭头、可点）
-//    clipRow()     64 高的行（图标 + 标题 + 右侧动作 + 箭头）
-//    expander()    可展开卡片（标题栏带实时控件，展开体放子项）
 // ============================================================================
 
 window.C = (function () {
@@ -48,11 +40,6 @@ window.C = (function () {
     return (children || []).flat(Infinity).filter((c) => c !== null && c !== undefined && c !== false);
   }
 
-  /** 图标（icons.js 提供的全局 iconEl），size 用 i16 / i18 / i19 / i20 / i22 / i24 / i32。 */
-  function icon(name, size) {
-    return iconEl(name || "info", size || "i20");
-  }
-
   // ---------------------------------------------------------------- 按钮
   function button(label, options) {
     options = options || {};
@@ -64,9 +51,9 @@ window.C = (function () {
       onclick: options.onClick,
       disabled: options.disabled ? "" : null,
     });
-    if (options.icon) node.appendChild(icon(options.icon, "i16"));
+    if (options.icon) node.appendChild(iconEl(options.icon, "i16"));
     if (label) node.appendChild(el("span", { text: label }));
-    if (options.trailingIcon) node.appendChild(icon(options.trailingIcon, "i16"));
+    if (options.trailingIcon) node.appendChild(iconEl(options.trailingIcon, "i16"));
     return node;
   }
 
@@ -99,9 +86,14 @@ window.C = (function () {
 
   // ------------------------------------------------------------ 滑块
   //  v 一律是「显示值」；换算成设置里的真实值由调用方在 onChange 里做。
-  //  外观由 DOM 画：4px 轨道 + 强调色填充段 + 「浅色外圈 + 强调色内点」的双层圆点。
+  //
+  //  外观由 DOM 画（几何与配色见 styles/components.css 里的 .win-slider-*）：
+  //  一条 4px 轨道、一段强调色填充、一个「浅色外圆 + 强调色内点」的双层圆点。
   //  真正的 <input type=range> 退成交互层（透明、铺满、盖在最上面），
   //  拖动 / 点击跳转 / 方向键 / 无障碍语义仍然由它负责。
+  //
+  //  以前是直接给 input 的 ::-webkit-slider-thumb 上 transform + transition ——
+  //  Chromium 下伪元素会被逐帧重新栅格化，拖动时看着一直在抖，所以改掉了。
   function slider(cfg) {
     const min = cfg.min, max = cfg.max, step = cfg.step || 1;
     const toDisplay = (v) => String(cfg.format ? cfg.format(v) : v) + (cfg.suffix || "");
@@ -111,8 +103,6 @@ window.C = (function () {
       el("div", { class: "win-slider-fill" }),
       el("div", { class: "win-slider-thumb" }, [el("span", { class: "win-slider-dot" })]),
     ]);
-
-    let pending = 0;
 
     const input = el("input", {
       class: "win-slider",
@@ -135,12 +125,14 @@ window.C = (function () {
       },
     });
 
-    const field = el("div", { class: "win-slider-field" }, [input, rail]);
+    const field = el("div", { class: "win-slider-field" }, [rail, input]);
     const value = el("span", { class: "win-slider-value", text: toDisplay(cfg.value) });
     const wrap = el("div", { class: "win-slider-wrap" }, [field, value]);
 
+    let pending = 0;
+
     // 只写这一个自定义属性。填充段宽度与圆点位置都由 CSS 的
-    // calc((100% - 22px) * var(--pct)) 算出来 —— JS 不必知道控件有多宽，
+    // calc((100% - 20px) * var(--pct)) 算出来 —— JS 不必知道控件有多宽，
     // 两个盒子又都是绝对定位，所以拖动时不会牵动任何布局。
     function paint(v) {
       const ratio = max === min ? 0 : (v - min) / (max - min);
@@ -212,7 +204,7 @@ window.C = (function () {
 
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
-      document.querySelectorAll(".combo.is-open").forEach((c) => { if (c !== root) c.classList.remove("is-open"); });
+      document.querySelectorAll(".win-combo.is-open").forEach((c) => { if (c !== root) c.classList.remove("is-open"); });
       root.classList.toggle("is-open");
     });
 
@@ -223,25 +215,7 @@ window.C = (function () {
     return root;
   }
 
-  // ------------------------------------------- 分段控件（Segmented）
-  function segmented(cfg) {
-    const root = el("div", { class: "win-segmented", role: "tablist", "aria-label": cfg.label || "" });
-    cfg.options.forEach((option) => {
-      const item = el("button", {
-        type: "button", role: "tab", text: option.label, "data-value": option.value,
-        "aria-selected": option.value === cfg.value ? "true" : "false",
-        onclick: () => {
-          root.querySelectorAll("button").forEach((b) =>
-            b.setAttribute("aria-selected", b.dataset.value === option.value ? "true" : "false"));
-          if (cfg.onChange) cfg.onChange(option.value);
-        },
-      });
-      root.appendChild(item);
-    });
-    return root;
-  }
-
-  // ------------------------------- 下划线选项卡（SelectorBar，视觉更轻）
+  // --------------------------------------------- 分段控件（SelectorBar）
   function selectorBar(cfg) {
     const root = el("div", { class: "win-selectorbar", role: "tablist", "aria-label": cfg.label || "" });
     cfg.options.forEach((option) => {
@@ -259,31 +233,14 @@ window.C = (function () {
     return root;
   }
 
-  // ------------------------------------------------------------ 文本框
-  function textbox(cfg) {
-    cfg = cfg || {};
-    const input = el("input", {
-      type: cfg.type || "search",
-      value: cfg.value || "",
-      placeholder: cfg.placeholder || "",
-      "aria-label": cfg.label || cfg.placeholder || "",
-      oninput: cfg.onInput,
-      onkeydown: cfg.onKeyDown,
-    });
-    return el("label", { class: "win-textbox" }, [
-      cfg.icon ? icon(cfg.icon, "i16") : null,
-      input,
-    ]);
-  }
-
   // -------------------------------------------------------------- 提示条
   function infoBar(cfg) {
     const iconName = { success: "success", warning: "warning", error: "error" }[cfg.severity] || "info";
     const node = el("div", { class: "win-infobar" + (cfg.severity ? " is-" + cfg.severity : "") }, [
-      el("span", { class: "bar-icon" }, [icon(iconName, "i20")]),
-      el("div", { class: "bar-body" }, [
+      el("span", { class: "bar-icon" }, [iconEl(iconName, "i20")]),
+      el("div", {}, [
         cfg.title ? el("div", { class: "bar-title", text: cfg.title }) : null,
-        cfg.message ? el("div", { class: "bar-msg", html: cfg.html ? cfg.message : null, text: cfg.html ? null : cfg.message }) : null,
+        cfg.message ? el("div", { class: "bar-msg", text: cfg.message }) : null,
       ]),
       cfg.onClose ? button("", { subtle: true, icon: "close", title: "关闭", onClick: () => node.remove() }) : null,
     ]);
@@ -298,121 +255,7 @@ window.C = (function () {
     ]);
   }
 
-  /** 内联小徽标（InfoBadge）：高 16 全圆角，用于「内置」「不兼容」这类短标记。 */
-  function infoBadge(text, variant) {
-    return el("span", {
-      class: "win-infobadge" + (variant ? " is-" + variant : ""),
-      text: text,
-    });
-  }
-
-  // ------------------------------------------------------------- 进度条
-  function progressBar(cfg) {
-    cfg = cfg || {};
-    const fill = el("i");
-    const node = el("div", { class: "win-progressbar" + (cfg.indeterminate ? " is-indeterminate" : "") }, [fill]);
-    if (!cfg.indeterminate) {
-      const pct = Math.max(0, Math.min(1, Number(cfg.value) || 0)) * 100;
-      fill.style.width = pct + "%";
-    }
-    node.setFill = (v) => {
-      const pct = Math.max(0, Math.min(1, Number(v) || 0)) * 100;
-      fill.style.width = pct + "%";
-    };
-    return node;
-  }
-
-  // ================================================== 分区与设置行 ==========
-
-  /** 分区标题（CW2 用 Typography.BodyStrong）。 */
-  function groupHead(title) {
-    return el("h2", { class: "group-head", text: title });
-  }
-
-  /**
-   * 一个分区：标题 + 内容。
-   * cfg = { title, note, children }
-   */
-  function group(cfg) {
-    const parts = [];
-    if (cfg.title) parts.push(groupHead(cfg.title));
-    (cfg.children || []).forEach((child) => {
-      if (child === null || child === undefined || child === false) return;
-      parts.push(child);
-    });
-    if (cfg.note) parts.push(el("p", { class: "group-note", text: cfg.note }));
-    return el("section", { class: "group" }, parts);
-  }
-
-  /**
-   * SettingCard —— 一张卡一项设置。
-   * cfg = { title, hint, icon, control, disabled, onClick, clickable, note }
-   */
-  function settingCard(cfg) {
-    cfg = cfg || {};
-    const row = el("div", {
-      class: "scard" + (cfg.disabled ? " is-disabled" : "") + (cfg.clickable ? " is-clickable" : ""),
-      onclick: cfg.clickable ? cfg.onClick : null,
-    }, [
-      el("div", { class: "scard-main" }, [
-        cfg.icon ? el("span", { class: "scard-icon" }, [icon(cfg.icon, "i22")]) : null,
-        el("div", { class: "scard-text" }, [
-          el("div", { class: "scard-title", text: cfg.title || "" }),
-          cfg.hint ? el("div", { class: "scard-desc", text: cfg.hint }) : null,
-        ]),
-      ]),
-      el("div", { class: "scard-action" }, cfg.control ? [].concat(cfg.control) : []),
-    ]);
-    return el("div", { class: "card" }, [row, cfg.note ? el("p", { class: "group-note card-pad", text: cfg.note }) : null]);
-  }
-
-  /**
-   * SettingItem —— 卡内密集行（无外框，靠分隔线分）。
-   * cfg = { title, hint, control, disabled, clickable, onClick, chevron, first, flat }
-   */
-  function settingItem(cfg) {
-    cfg = cfg || {};
-    return el("div", {
-      class: "sitem" +
-        (cfg.disabled ? " is-disabled" : "") +
-        (cfg.clickable ? " is-clickable" : "") +
-        (cfg.flat ? " is-flat" : "") +
-        (cfg.first ? " is-first" : ""),
-      onclick: cfg.clickable ? cfg.onClick : null,
-    }, [
-      el("div", { class: "sitem-main" }, [
-        el("div", { class: "sitem-title", text: cfg.title || "" }),
-        cfg.hint ? el("div", { class: "sitem-desc", text: cfg.hint }) : null,
-      ]),
-      el("div", { class: "sitem-action" }, [
-        [].concat(cfg.control || []),
-        cfg.chevron ? el("span", { class: "chev" }) : null,
-      ]),
-    ]);
-  }
-
-  /**
-   * ClipRow —— CW2 的 ClipItem：固定 64 高、顶部 1px 分隔线、悬停有底色。
-   * cfg = { title, hint, icon, control, onClick, chevron, disabled, first }
-   */
-  function clipRow(cfg) {
-    cfg = cfg || {};
-    return el("button", {
-      class: "crow" +
-        (cfg.disabled ? " is-disabled" : "") +
-        (cfg.first ? " is-first" : ""),
-      type: "button",
-      disabled: cfg.disabled ? "" : null,
-      onclick: cfg.onClick,
-    }, [
-      cfg.icon ? el("span", { class: "crow-icon" }, [icon(cfg.icon, "i22")]) : null,
-      el("span", { class: "crow-title", text: cfg.title || "" }),
-      cfg.control ? el("span", { class: "crow-action" }, [].concat(cfg.control)) : null,
-      cfg.chevron ? el("span", { class: "chev" }) : null,
-    ]);
-  }
-
-  /** 二级入口（图标磁贴 + 标题 + 说明 + 箭头），观感比 clipRow 更「大卡」。 */
+  // ------------------------------------------------------ 链接行（带图标）
   function linkRow(cfg) {
     return el("button", {
       class: "win-linkrow",
@@ -420,7 +263,7 @@ window.C = (function () {
       style: cfg.tileColor ? { "--tile-color": cfg.tileColor } : undefined,
       onclick: cfg.onClick,
     }, [
-      el("span", { class: "tile" }, [icon(cfg.icon || "external", "i20")]),
+      el("span", { class: "tile" }, [iconEl(cfg.icon || "external", "i20")]),
       el("span", {}, [
         el("div", { class: "row-title", text: cfg.title }),
         cfg.hint ? el("div", { class: "row-hint", text: cfg.hint }) : null,
@@ -429,45 +272,7 @@ window.C = (function () {
     ]);
   }
 
-  /**
-   * 可展开卡片（SettingExpander）。
-   * 标题栏左侧是图标 + 标题 + 说明，右侧是实时控件（action）与展开箭头；
-   * 展开体放子行。动画 333ms（RinUI animationSpeedExpander）。
-   * cfg = { title, hint, icon, action, children, open }
-   */
-  function expander(cfg) {
-    cfg = cfg || {};
-    const body = el("div", { class: "card" }, nodes(cfg.children));
-    const node = el("section", { class: "exp" + (cfg.open ? " is-open" : "") });
-
-    const head = el("button", {
-      class: "exp-head",
-      type: "button",
-      "aria-expanded": cfg.open ? "true" : "false",
-      onclick: () => {
-        const open = !node.classList.contains("is-open");
-        node.classList.toggle("is-open", open);
-        head.setAttribute("aria-expanded", open ? "true" : "false");
-      },
-    }, [
-      el("span", { class: "exp-main" }, [
-        cfg.icon ? el("span", { class: "scard-icon" }, [icon(cfg.icon, "i22")]) : null,
-        el("span", { class: "scard-text" }, [
-          el("span", { class: "scard-title", text: cfg.title || "" }),
-          cfg.hint ? el("span", { class: "scard-desc", text: cfg.hint }) : null,
-        ]),
-      ]),
-      el("span", { class: "exp-action" }, cfg.action ? [].concat(cfg.action) : []),
-      el("span", { class: "exp-chev" }, [el("span", { class: "chev" })]),
-    ]);
-
-    node.appendChild(head);
-    node.appendChild(el("div", { class: "exp-body" }, [el("div", {}, [body])]));
-    return node;
-  }
-
-  // ------------------------------------------------- 旧接口（保持兼容） ----
-  /** 旧的行式设置行；现在映射到 settingItem 的横排版本 .row。 */
+  // ------------------------------------------------------------ 设置行
   function settingRow(cfg) {
     return el("div", { class: "row" + (cfg.disabled ? " is-disabled" : "") }, [
       el("div", {}, [
@@ -478,11 +283,10 @@ window.C = (function () {
     ]);
   }
 
-  /** 旧的「卡片包多行」分组；市场页等仍在用，保留。 */
   function cardGroup(cfg) {
     const card = el("div", { class: "card" }, cfg.rows);
-    return el("section", { class: "group" }, [
-      cfg.title ? el("h3", { class: "group-head", text: cfg.title }) : null,
+    return el("section", { class: "card-group" }, [
+      cfg.title ? el("h3", { class: "group-title" + (cfg.section ? " is-section" : ""), text: cfg.title }) : null,
       card,
       cfg.note ? el("p", { class: "group-note", text: cfg.note }) : null,
     ]);
@@ -513,15 +317,7 @@ window.C = (function () {
   }
 
   return {
-    // 基础
-    el, nodes, icon, button, progressRing,
-    // 输入控件
-    toggle, slider, numberBox, combo, segmented, selectorBar, textbox,
-    // 反馈
-    infoBar, badge, infoBadge, progressBar,
-    // 行 / 卡片 / 分区
-    groupHead, group, settingCard, settingItem, clipRow, linkRow, expander,
-    // 旧接口
-    settingRow, cardGroup, dialog,
+    el, nodes, button, toggle, slider, numberBox, combo, selectorBar,
+    infoBar, badge, linkRow, settingRow, cardGroup, dialog, progressRing,
   };
 })();

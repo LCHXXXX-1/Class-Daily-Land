@@ -26,18 +26,13 @@
 
 用 Edge 无头模式实拍（1360×900，无后期处理）：
 
-- [通用 · 页内标题栏](docs/screenshots/settings-general-light.png)（`?page=general`，见得到标题栏与窗口按钮）
+- [通用 · 浅色](docs/screenshots/settings-general-light.png)
 - [通用 · 原生标题栏模式](docs/screenshots/settings-general-native-chrome.png)（`?chrome=native`，两个宿主实际用的就是这种）
-- [外观 · 浅色](docs/screenshots/settings-appearance-light.png)（主题预览磁贴 + 下划线选项卡）
 - [外观 · 深色](docs/screenshots/settings-appearance-dark.png)
-- [灵动岛 · 浅色](docs/screenshots/settings-island-light.png)（两张可展开卡片：主岛 / 副岛）
-- [课表与提醒 · 浅色](docs/screenshots/settings-schedule-light.png)
-- [课表与提醒 · 深色](docs/screenshots/settings-schedule-dark.png)
-- [作业 · 浅色](docs/screenshots/settings-homework-light.png)（编辑器是**内嵌**的，不是弹窗）
 - [插件 · 浅色](docs/screenshots/settings-plugins-light.png)
 - [插件 · 深色](docs/screenshots/settings-plugins-dark.png)
-- [高级 · 浅色](docs/screenshots/settings-advanced-light.png)
-- [关于 · 浅色](docs/screenshots/settings-about-light.png)
+- [课表与提醒 · 深色](docs/screenshots/settings-schedule-dark.png)
+- [作业 · 浅色](docs/screenshots/settings-homework-light.png)（编辑器是**内嵌**的，不是弹窗）
 
 二级对话框（页内浮层，`?dialog=<id>` 深链接拍的）：
 
@@ -54,29 +49,25 @@ ui/
 ├── index-qt.html         Python 宿主入口（多引一行 qwebchannel.js）
 ├── host.js               宿主桥：唯一分辨 WebView2 / Qt 的文件（含浏览器 mock）
 ├── lib/
-│   ├── icons.js          内联 SVG 图标（42 个；不用图标字体，避免缺字掉方块）
-│   ├── controls.js       Fluent / RinUI 构件构造器：
-│   │                     ── 输入：ToggleSwitch / Slider / NumberBox / ComboBox /
-│   │                        Segmented / SelectorBar / TextBox
-│   │                     ── 反馈：InfoBar / Badge / InfoBadge / ProgressBar / ProgressRing
-│   │                     ── 行与卡片：group / SettingCard / SettingItem / ClipRow /
-│   │                        LinkRow / SettingExpander / ContentDialog
+│   ├── icons.js          内联 SVG 图标（27 个；不用图标字体，避免缺字掉方块）
+│   ├── controls.js       WinUI 3 控件构造器：ToggleSwitch / Slider / NumberBox /
+│   │                     ComboBox / SelectorBar / InfoBar / LinkRow / ContentDialog …
 │   └── editors.js        二级对话框外壳 + 编辑控件：文本框 / 日期 / 多行 / 下拉 /
 │                         可选中列表 / 卡片（对应原生 ScheduleDialogParts）
 ├── pages/
-│   ├── settings.js       设置中心本体：外壳（标题栏 / 分组导航 / 内容区）+ 八个页面
+│   ├── settings.js       设置中心本体：八个页面 + 外壳（标题栏 / 导航 / 内容区）
 │   ├── dialogs.js        二级对话框（假期与调休 / 周末作息 / 值日生名单 / 作业编辑器）
 │   └── market.js         插件页：插件市场 + 第三方包 + 本地插件 + 运行日志
 ├── styles/
 │   ├── tokens.css        设计令牌（浅/深两套，变量名对齐 WinUI 3 资源键）
-│   ├── components.css    控件与行/卡片构件
-│   ├── settings.css      版式：NavigationView 外壳、英雄区、分区、瀑布流
+│   ├── components.css    控件样式
+│   ├── settings.css      版式：NavigationView 布局、卡片组、设置行
 │   └── dialogs.css       浮层对话框与其中的编辑控件
 ├── docs/screenshots/     界面实拍（Edge 无头模式，无后期处理）
 └── tests/                三项自动化校验（见下）
 ```
 
-合计约 4,600 行（不含测试），**零运行时依赖、零构建**：两个 `<link>` + 七个 `<script>`。
+合计约 4,000 行（不含测试），**零运行时依赖、零构建**：两个 `<link>` + 七个 `<script>`。
 
 ## 设计令牌与 WinUI 3 的对应
 
@@ -89,71 +80,29 @@ ui/
 | `--divider-stroke-color-default` | `DividerStrokeColorDefault` | 行分隔线 |
 | `--text-fill-color-primary/secondary/tertiary` | `TextFillColor*` | 三级文字 |
 | `--control-fill-color-*` / `--control-stroke-color-*` | `ControlFillColor*` / `ControlStrokeColor*` | 控件底与描边 |
-| `--control-alt-secondary/tertiary-fill-color` | `ControlAltSecondaryColor` / `ControlAltTertiaryColor` | 行悬停与选中底 |
 | `--accent-fill-color-default` | `AccentFillColorDefault` | 强调色（浅 `#005FB8` / 深 `#60CDFF`） |
-| `--system-fill-color-*` / `-*-bg` | `SystemFillColorSuccess/Caution/Critical` + 浅底 | 语义色与 InfoBar 底 |
-| `--control-corner-radius` | `ControlCornerRadius` | 控件圆角 5px（RinUI `buttonRadius`） |
-| `--small-corner-radius` | — | 小件圆角 3px（RinUI `smallRadius`） |
-| `--window-corner-radius` | — | 窗口 / 对话框圆角 7px（RinUI `windowRadius`） |
-| `--card-corner-radius` | — | 卡片圆角 8px |
-| `--nav-item-height` / `--nav-indicator-*` | — | 导航项 40px、选中竖条 3×17 |
-| `--setting-row-height` / `--setting-item-min-height` | — | 行高 64px（ClipItem）/ 50px（SettingItem） |
+| `--system-fill-color-*` | `SystemFillColorSuccess/Caution/Critical` | 语义色 |
+| `--control-corner-radius` / `--overlay-corner-radius` | `ControlCornerRadius`(5) / — | 圆角（浮层 12px） |
 
 字体用 `Segoe UI Variable Display / Text`，回落 `Microsoft YaHei UI`。
 **要换皮、要接系统强调色，只改这一个文件。**
 
-> 颜色这一层本来就是同一套：RinUI 的 `controlFillColor #FFFFFFB2`、`cardColor #FFFFFFB2`、
-> `textColor #1b1b1b`、`dividerBorderColor #00000014`、`backgroundColor #F3F3F3`
-> 与 WinUI 3 的资源**逐字节一致**。唯一的取舍是强调色 —— 本项目沿用 Windows 原生蓝
-> （应用是 Windows 桌面工具，跟系统一致），RinUI 默认是 `#605ed2`，
-> 想换成 CW2 那个紫只改 `--accent-fill-color-default` 三行。
+### 观感与动效（对齐 Class Widgets 2 / RinUI）
 
-## 构图（照 Class Widgets 2 重写的部分）
+2026-10 这轮把观感整体重写过，几何与动效的量级取自
+[RinUI](https://github.com/RinLit-233-shiroko/Rin-UI)（Class Widgets 2 的组件库）的
+`themes/*.qml`，不是拍脑袋：
 
-上一版是「一个卡片里堆很多行」的 Win11 设置观感。这一版把**构图**换成
-[Class Widgets 2](https://github.com/RinLit-233-shiroko/Class-Widgets-2) 的写法
-（它建在 [RinUI](https://github.com/RinLit-233-shiroko/Rin-UI) 之上），
-几何、字体阶梯、动效时长全部按两份源码的真实数值取值，不是照着截图估的：
-
-```
-.app-shell
-  ├ .app-titlebar                        48px 窗口镶边（无边框时才画按钮）
-  └ .app-body
-      ├ .nav-pane                        280px：搜索 + 分组导航（父项可展开子项）
-      └ .content-pane                    圆角内容卡（layerColor + 1px 描边）
-          └ .content-inner               max-width 1000、两侧 42px
-              ├ .hero                    英雄区：主题色薄雾 + 大标题，底部渐隐
-              └ .group × N               分区：BodyStrong 标题 + 若干卡片
-                  ├ .card > .scard       一张卡一项设置（图标 22 + 标题 + 说明 + 控件）
-                  ├ .exp                 SettingExpander：标题栏带实时控件，展开体放密集行
-                  │   └ .sitem × N       卡内密集行（≥50 高、分隔线、可选箭头）
-                  └ .crow                ClipItem：64 高的行，顶部 1px 分隔线、悬停有底色
-```
-
-- **导航分组**：`课表与提醒` 自己仍是设置页，同时展开出 5 个子项（课表管理 / 周末作息 /
-  假期与调休 / 值日生名单 / 状态测试）—— 子项**不是页面**，是二级对话框入口。
-  与 CW2 的「Notification & Time」那种「有子项、也有正文」的分组同构。
-  子项另有 `.nav-sub-item` 类名，`?page=` 与 .NET/Qt 的按页直达不受影响。
-- **字体阶梯**：照 RinUI `Typography` 的 8 档（Display 68/92 · TitleLarge 40/52 ·
-  Title 28/36 · Subtitle 20/28 · BodyLarge 18/24 · Body 14/20 · **BodyStrong 14/20 DemiBold** ·
-  Caption 12/16）。分区标题用 BodyStrong、行标题用 Body、说明用 Caption —— 与 CW2 一致。
-- **行高与内边距**：ClipItem 64 高 / 左 22 右 16 / gap 14；SettingCard padding 18×16、
-  gap 16、图标 22；SettingItem ≥50 高、gap 16；导航项 40 高、图标 19、左缩进 11、
-  子项额外缩进 34。
-- **圆角**：控件 5（RinUI `buttonRadius`）、小件 3（`smallRadius`）、
-  窗口与对话框 7（`windowRadius`）、卡片 8。
-- **标题栏**：48px 高（`windowTitleBarHeight`），窗口按钮 48×40（RinUI `CtrlBtn`
-  实测值，不是 `windowButtonWidth` 那个 46），关闭键悬停变 `#c42b1c`（`captionCloseColor`）。
-- **高度层级阴影**：RinUI 每档只有一段、无 spread —— cardRest `0 2px 4px @0.04`、
-  tooltip `0 4px 8px @0.14`、flyout `0 8px 24px @0.14`、dialog `0 32px 64px @0.19`
-  （深色 `@0.37`）；卡片与按钮顶部有一道**内高光**（`--hairline-highlight`），
-  是控件「有厚度」的关键。
-- **动效**：时长取 RinUI `themes/utils.qml`，曲线取它实际用的 Qt Easing
-  （颜色 → OutQuart，几何 → OutQuint）。状态色 187ms、开关与指示器 250ms、
-  **可展开卡片 333ms**（`animationSpeedExpander`）、页面推进与对话框缩放 667ms、
-  不确定进度条 1550ms。展开动画用 `grid-template-rows: 0fr → 1fr`，不需要固定高度。
+- **圆角**：按钮 5px（RinUI `buttonRadius`）、卡片 8px、浮层/对话框 12px。
+- **标题栏**：48px 高（RinUI `windowTitleBarHeight`），窗口按钮 46×32（`windowButtonWidth`），
+  关闭键悬停变 `#c42b1c`（`captionCloseColor`）。
+- **高度层级阴影**：静置 / 悬停 / 浮出 / 对话框各一档（RinUI shadows：dialog 0.19/64/32、
+  flyout 0.14/24/8、cardRest 0.04/4/2），深色下整体加重；卡片与按钮顶部有一道
+  **内高光**（`--hairline-highlight`），是控件「有厚度」的关键。
+- **动效曲线与时长**：状态色 187ms（`duration-appearance`）、深浅色切换 200ms OutQuart、
+  大块表面 350ms OutQuint、指示条/对话框 667ms。悬停抬升 1px、按下回缩 2%。
 - **深浅色切换是交叉淡入**：切主题的瞬间给 `<html>` 挂 `data-theme-anim`，
-  所有颜色类属性一起按 187ms OutQuart 过渡，240ms 后摘掉（启动首帧不做过场）。
+  所有颜色类属性一起按 200ms OutQuart 过渡，260ms 后摘掉（启动首帧不做过场）。
   宿主侧配套：.NET 的设置窗口**显式设过一次 `ThemeMode`** —— 离屏探针实测，
   显式设过的窗口完全不受 `Application.ThemeMode` 切换影响，页面刷新与重载都不会发生。
 
@@ -431,17 +380,6 @@ Python 侧直接以 `file://` 载入 `index-qt.html`（经典脚本，不会有 
 
 **一句话判据：在 `Changed` 里做任何「重建 / 重绘 / 重设」之前，先问一句「这一项真的变了吗」。**
 
-### `[hidden]` 会被自己写的 `display` 盖掉
-
-`components.css` 开头有一条 `[hidden] { display: none !important; }`，**别删**。
-`.win-btn`（`inline-flex`）、`.market-banner`（`flex`）这些构件都显式声明了 `display`，
-而**作者样式会盖掉浏览器默认的 `[hidden] { display: none }`** —— 于是「给元素设了
-`hidden` 却依然显示」。插件市场的按钮显隐全靠 `.hidden`（未安装只露「装上」、
-已安装只露「禁用 / 卸掉」），漏了这条就会五个按钮全冒出来。
-
-最容易踩的地方是：**`render.test.mjs` 查的是 `.hidden` 属性、不是计算样式**，
-所以这个 bug 测试抓不到 —— 只能靠这条 CSS 兜住（本轮重写就漏过一次，是看截图才发现的）。
-
 ### 滑块为什么是四个 DOM 元素而不是 `input[type=range]` 自己画
 
 `Slider` 的外观是「4px 圆角轨道 + 从左边缘画到圆点左边缘的强调色填充段 + 浅色外圆里套一个
@@ -452,17 +390,16 @@ Python 侧直接以 `file://` 载入 `index-qt.html`（经典脚本，不会有 
 所以 `lib/controls.js` 里的 `slider()` 把真正的 `<input type=range>` 退成**纯交互层**
 （`opacity: 0`，绝对定位铺满 `.win-slider-field`，继续负责拖动 / 点击跳转 / 方向键 / 无障碍语义），
 外观全部交给 `.win-slider-rail` 里的四个元素画。位置只由一个 `--pct`（**0..1 的纯数字**）驱动，
-填充段宽度和圆点位置共用同一个 CSS 表达式 `calc((100% - 22px) * var(--pct))` ——
+填充段宽度和圆点位置共用同一个 CSS 表达式 `calc((100% - 20px) * var(--pct))` ——
 JS 不需要知道控件有多宽，两个盒子都是绝对定位，拖动时不会牵动任何布局。
 
-几何照 RinUI 的 `Slider`：轨道 4px 圆角 99（未填充 `--control-strong-fill-color-default`）、
-把手 22×22 的浅色外圆（`handleSize 20` + 2）、内点 10×10 强调色
-（`Math.round(20 * 0.55) & ~1`，RinUI 原式）。回归用例见 `render.test.mjs` 第 [3] 节 ——
-其中一条专门断言 `components.css` 里**不能**再出现 `::-webkit-slider-thumb`。
+几何与配色是量原生 WPF 窗口（`ThemeMode="System"` 的 Win11 Fluent 主题）的像素定的：
+轨道 4px / 未填充 `ControlStrongFillColorDefault`（实测 `#8d8d8d`）/ 圆点外圆 20px 浅色 +1px 描边 /
+内点 12px 强调色。回归用例见 `render.test.mjs` 第 [3] 节。
 
+上图两张的放大对照（上 = 原生 WPF，下 = 本目录的 Web 实现）：
 
-> **这张对照图已删除。** 它量的是旧肤色（外圆 20 / 内点 12），本轮把手尺寸
-> 改成 RinUI 的 22 / 10 之后对照就失效了；留着一张与代码不符的图比没有更误导。
+![滑块：原生 WPF 与 Web 实现的对照](docs/slider-vs-native.png)
 
 ## 测试（不需要浏览器）
 
@@ -470,8 +407,7 @@ JS 不需要知道控件有多宽，两个盒子都是绝对定位，拖动时�
 npm test                       # 一把跑完下面三项
 node tests/static-check.mjs    # 语法 + 图标名 + 设置键 + class 名 四处交叉校验
 node tests/bridge.test.js      # 两只宿主的桥接协议（含错误回包、事件推送、Qt 握手、通知通道）
-node tests/render.test.mjs     # jsdom 真渲染：八个页面点一遍 + 导航分组与子项 + 可展开卡片 +
-                               #              主题磁贴 + 主题三档 + 控件回写 + 搜索 +
+node tests/render.test.mjs     # jsdom 真渲染：八个页面点一遍 + 控件回写 + 主题 + 搜索 + 对话框 +
                                #              二级对话框（假期/周末/值日生/作业）+ 插件市场 +
                                #              无边框标题栏 + 启动失败不白屏
 ```

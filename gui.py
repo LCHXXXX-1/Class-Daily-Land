@@ -402,8 +402,7 @@ class ClassBoardApp(QWidget):
         self._notify_island()
 
     def open_settings(self):
-        # 设置界面 V4（1:1 Win11 设置：二级导航 + 内嵌课表/作业编辑）
-        # 回退旧版：改回 settings_dialog_v3 / v2 / settings_dialog
+        # 设置中心：项目内置的 QML + RinUI 界面为主，起不来才回退原生设置窗。
         # 单例：已打开则激活已有窗口，避免从托盘/右键菜单重复打开无数个
         existing = getattr(self, "_settings_dlg", None)
         if existing is not None:
@@ -414,8 +413,7 @@ class ClassBoardApp(QWidget):
                 return
             except RuntimeError:
                 self._settings_dlg = None
-        from settings_dialog_v4 import SettingsDialog
-        # 副岛（或主岛）→ 设置窗口的形变过渡起点
+        # 副岛（或主岛）→ 设置窗口的形变过渡起点（只有原生兜底窗用得上）
         morph_rect = None
         try:
             sub = getattr(self.controller, "sub_island", None)
@@ -436,10 +434,11 @@ class ClassBoardApp(QWidget):
         """挑一个能跑的设置中心。
 
         回退链（任何一层都不允许白屏）：
-          1. QML 版（RinUI / Fluent Design，独立项目 ClassDailyLand-QML，
-             见 qml_bridge.py）；
-          2. Web 版（ui/ 那套界面 + QWebEngineView，和 .NET 版共用同一份 HTML/CSS）；
-          3. 原生 settings_dialog_v4。
+          1. 项目内置 QML 版（RinUI / Fluent Design，见 qml_bridge.py）；
+          2. 原生 settings_dialog_v4 —— 只在 QML 版不可用时兜底。
+
+        原先还有第三层「Web 版」（ui/ 那套 HTML + QWebEngineView，与 .NET 版共用），
+        已被 QML 版取代，从这里移除；文件仍在仓库里，需要时按下面的顺序加回来即可。
         """
         try:
             import qml_bridge
@@ -448,7 +447,7 @@ class ClassBoardApp(QWidget):
                     self,
                     settings=self.settings,
                     schedule_manager=self.schedule_manager,
-                    # 二级页面（值日生 / 作业 / 插件）要用
+                    # 值日生 / 作业 / 插件这几页要用真实管理器
                     duty_manager=self.duty_manager,
                     homework_manager=self.homework_manager,
                     plugin_manager=self.plugin_manager,
@@ -457,26 +456,12 @@ class ClassBoardApp(QWidget):
                 )
                 if qml_dlg is not None:
                     return qml_dlg
+                print("[settings] QML 版装配返回空，改用原生窗口")
         except Exception as exc:
-            print("[settings] QML 版设置中心不可用，尝试 Web 版：%s" % exc)
+            print("[settings] QML 版设置中心不可用，改用原生窗口：%s" % exc)
 
-        try:
-            import web_settings
-            if web_settings.is_available():
-                return web_settings.WebSettingsDialog(
-                    self.settings,
-                    schedule_manager=self.schedule_manager,
-                    plugin_manager=self.plugin_manager,
-                    controller=self.controller,
-                    parent=self,
-                    app=self,
-                    # 二级对话框（值日生名单 / 作业编辑器）要用
-                    duty_manager=self.duty_manager,
-                    homework_manager=self.homework_manager,
-                )
-        except Exception as exc:
-            print("[settings] Web 版设置中心不可用，改用原生窗口：%s" % exc)
-
+        # 只在真要兜底时才导入 v4：它会连带拉起 market_page / package_page 等一堆模块
+        from settings_dialog_v4 import SettingsDialog
         return SettingsDialog(
             self.settings,
             schedule_manager=self.schedule_manager,

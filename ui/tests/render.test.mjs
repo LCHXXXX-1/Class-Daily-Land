@@ -78,44 +78,14 @@ const pages = [
 for (const [label, minGroups, minRows] of pages) {
   click(navByLabel(label));
   await sleep(30);
-  const groups = qa(".group").length;
-  const rows = qa(".scard, .sitem, .crow, .win-linkrow, .plugin-row").length;
+  const groups = qa(".card-group").length;
+  const rows = qa(".row, .win-linkrow, .plugin-row").length;
   check(`${label}：卡片组 ${groups}（≥${minGroups}）、设置行 ${rows}（≥${minRows}）`,
     groups >= minGroups && rows >= minRows, `实际 ${groups} 组 / ${rows} 行`);
 }
 check("课表页有 5 个二级入口",
   (() => { click(navByLabel("课表与提醒")); return qa(".win-linkrow").length === 5; })(),
   String(qa(".win-linkrow").length));
-
-// 导航分组：父项可展开子项，子项是二级对话框入口（不是页面）——
-// 所以 .nav-item 仍然是 8 个，子项另有自己的类名。
-check("导航分组展开了 5 个子项（课表管理 / 周末作息 / 假期与调休 / 值日生名单 / 状态测试）",
-  qa(".nav-sub-item").length === 5, String(qa(".nav-sub-item").length));
-check("子项不计入页面导航（.nav-item 仍为 8）", qa(".nav-item").length === 8,
-  String(qa(".nav-item").length));
-
-// 可展开卡片（SettingExpander）：主岛 / 副岛各一张，默认展开
-click(navByLabel("灵动岛"));
-await sleep(30);
-check("灵动岛页用可展开卡片分组", qa(".exp").length === 2, String(qa(".exp").length));
-const expNode = q(".exp");
-check("展开卡片默认 open", !!expNode && expNode.classList.contains("is-open"));
-if (expNode) {
-  click(q(".exp-head"));
-  await sleep(30);
-  check("点标题栏能收起", !expNode.classList.contains("is-open"));
-}
-
-// 主题预览磁贴（照 CW2 Personalization 的主题网格）
-click(navByLabel("外观"));
-await sleep(30);
-check("外观页有 3 张主题预览磁贴", qa(".theme-tile").length === 3,
-  String(qa(".theme-tile").length));
-check("磁贴选中态跟着 theme_mode（system → 恰好 1 张）",
-  qa(".theme-tile").filter((t) => t.classList.contains("is-selected")).length === 1,
-  String(qa(".theme-tile").filter((t) => t.classList.contains("is-selected")).length));
-click(navByLabel("通用"));
-await sleep(30);
 
 console.log("[3] 控件回写");
 click(navByLabel("通用"));
@@ -152,7 +122,7 @@ check("位置由 --pct 驱动，且是纯数字（calc 里要拿它当乘数）"
   sliderField.style.getPropertyValue("--pct") === "0.7714",
   sliderField.style.getPropertyValue("--pct"));
 // 只看真正的规则，不看注释（注释里正好写了这条老路的名字）
-const sliderCss = fs.readFileSync(path.join(ROOT, "styles", "components.css"), "utf8")
+const sliderCss = fs.readFileSync(path.join(ROOT, "styles", "app.css"), "utf8")
   .replace(/\/\*[\s\S]*?\*\//g, "");
 check("没有回到 ::-webkit-slider-thumb 那条老路", !sliderCss.includes("::-webkit-slider-thumb"));
 

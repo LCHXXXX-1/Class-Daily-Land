@@ -13,8 +13,8 @@ import { execFileSync } from "node:child_process";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
-const JS_FILES = ["host.js", "lib/icons.js", "lib/controls.js", "pages/settings.js"];
-const CSS_FILES = ["styles/tokens.css", "styles/components.css", "styles/settings.css"];
+const JS_FILES = ["host.js", "lib/icons.js", "lib/controls.js", "pages/app.js"];
+const CSS_FILES = ["styles/tokens.css", "styles/app.css"];
 
 let failures = 0;
 const fail = (msg) => { console.log("  ✗ " + msg); failures++; };

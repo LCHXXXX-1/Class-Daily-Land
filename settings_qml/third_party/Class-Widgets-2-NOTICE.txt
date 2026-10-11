@@ -1,0 +1,6 @@
+The FluentWindow settings shell and cw2_settings.png icon are adapted from
+Class Widgets 2:
+https://github.com/RinLit-233-shiroko/Class-Widgets-2
+
+Copyright (c) 2026 RinLit
+Licensed under the MIT License. See Class-Widgets-2-LICENSE.txt.
