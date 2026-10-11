@@ -12,7 +12,7 @@
       "hash_file": "plugins/class.hexwisp72.audio.hash.json",
       "sha256": "bafc760aa6c1d965bf88d5256065b13a1bebd2134e30ea73a707c788ee09c65b",
       "size": 7979,
-      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.audio.cblplugin",
+      "url": "https://gitee.com/lchxxxx/class-daily-land/raw/plugins/plugins/class.hexwisp72.audio.cblplugin",
       "uploaded_at": "2026-09-27T07:56:13.985800+00:00"
     },
     {
@@ -27,7 +27,7 @@
       "hash_file": "plugins/class.lchxxxx-1.clock.hash.json",
       "sha256": "31ec07e9b2bf8b07a9c103cc8a43aa2a5aeff6f329ac6d7bb9faad1de5b96118",
       "size": 806,
-      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.lchxxxx-1.clock.cblplugin",
+      "url": "https://gitee.com/lchxxxx/class-daily-land/raw/plugins/plugins/class.lchxxxx-1.clock.cblplugin",
       "uploaded_at": "2026-09-27T07:59:29.273486+00:00"
     },
     {
@@ -42,7 +42,7 @@
       "hash_file": "plugins/class.hexwisp72.disaster-alert.hash.json",
       "sha256": "713f5ff43b28e252b8a9a08951796ca6a218d5122836c3105f62c29af10437b6",
       "size": 90190,
-      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.disaster-alert.cblplugin",
+      "url": "https://gitee.com/lchxxxx/class-daily-land/raw/plugins/plugins/class.hexwisp72.disaster-alert.cblplugin",
       "uploaded_at": "2026-09-27T07:59:43.004217+00:00"
     },
     {
@@ -57,7 +57,7 @@
       "hash_file": "plugins/class.hexwisp72.gaokao-countdown.hash.json",
       "sha256": "f08c9508b92317bbd5c114da26dde14d75c610721da8a9ffd2df53c1fc9bc616",
       "size": 2548,
-      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.gaokao-countdown.cblplugin",
+      "url": "https://gitee.com/lchxxxx/class-daily-land/raw/plugins/plugins/class.hexwisp72.gaokao-countdown.cblplugin",
       "uploaded_at": "2026-09-27T08:00:32.521697+00:00"
     },
     {
@@ -72,7 +72,7 @@
       "hash_file": "plugins/class.hexwisp72.weather.hash.json",
       "sha256": "318e5ebb448e05b3423ebc87ec4a2d5f846fc6bd57d92cda66d030a8d0e353d8",
       "size": 7319,
-      "url": "https://github.com/LCHXXXX-1/Class-Daily-Land/raw/plugins/plugins/class.hexwisp72.weather.cblplugin",
+      "url": "https://gitee.com/lchxxxx/class-daily-land/raw/plugins/plugins/class.hexwisp72.weather.cblplugin",
       "uploaded_at": "2026-09-27T08:00:55.676165+00:00"
     }
   ]
