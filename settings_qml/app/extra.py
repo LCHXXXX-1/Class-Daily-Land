@@ -59,10 +59,26 @@ class TimetableStore(QObject):
 
     changed = Signal()
 
-    def __init__(self, parent: QObject | None = None, schedule: Any = None) -> None:
+    def __init__(self, parent: QObject | None = None, schedule: Any = None,
+                 on_changed: Any = None) -> None:
         super().__init__(parent)
         self._schedule = schedule          # ScheduleManager 实例
         self._mod = _import_py("schedule")  # normalize_timetable 等模块级函数
+        self._on_changed = on_changed      # 宿主回调：("schedule") → 刷新主窗/灵动岛
+
+    def _bump(self) -> None:
+        """课表数据变了：通知 QML 刷新 + 通知宿主重算主窗与灵动岛。
+
+        原生那几个对话框每次保存后都自己调 `_notify_island()`；
+        QML 侧没有 app 引用，靠这条回调补上 —— 否则「设置里改完课表，
+        灵动岛还显示旧课」。
+        """
+        self.changed.emit()
+        if self._on_changed is not None:
+            try:
+                self._on_changed("schedule")
+            except Exception:  # noqa: BLE001 - 宿主刷新失败不该打断保存
+                pass
 
     @Slot(result=bool)
     def isAvailable(self) -> bool:
@@ -107,7 +123,7 @@ class TimetableStore(QObject):
             return False
         ok = bool(self._schedule.switch_timetable(name))
         if ok:
-            self.changed.emit()
+            self._bump()
         return ok
 
     @Slot(str, str, result="QVariantMap")
@@ -118,7 +134,7 @@ class TimetableStore(QObject):
                                              copy_from.strip() or None)
         if not ok:
             return _err("名字为空或已存在同名课表")
-        self.changed.emit()
+        self._bump()
         return {"ok": True, "name": name.strip()}
 
     @Slot(str, str, result="QVariantMap")
@@ -128,7 +144,7 @@ class TimetableStore(QObject):
         ok = self._schedule.rename_timetable(old, new.strip())
         if not ok:
             return _err("改不了：课表不存在、名字为空或重名")
-        self.changed.emit()
+        self._bump()
         return {"ok": True, "name": new.strip()}
 
     @Slot(str, result="QVariantMap")
@@ -138,7 +154,7 @@ class TimetableStore(QObject):
         ok = self._schedule.delete_timetable(name)
         if not ok:
             return _err("删不了：默认课表或最后一张课表不能删")
-        self.changed.emit()
+        self._bump()
         return {"ok": True}
 
     @Slot(str, "QVariant", "QVariant", result="QVariantMap")
@@ -152,7 +168,7 @@ class TimetableStore(QObject):
         if not self._schedule.update_timetable(name, norm["periods"],
                                                norm["timetable"]):
             return _err("课表不存在")
-        self.changed.emit()
+        self._bump()
         return {"ok": True}
 
     # ---------------- 周末课表 ----------------
@@ -179,6 +195,10 @@ class TimetableStore(QObject):
                                  (wk.get("afternoon_periods") or [])
                                  if isinstance(p, dict)],
             "courses": [str(c) for c in (wk.get("courses") or [])],
+            # 上午节次是**日常课表里早于分界时间**的那些（原生的表格上半段：
+            # 只读、灰底）。QML 要照着画，所以得把明细一起给出去，
+            # 不能只给个节数 —— 否则用户不知道上午到底几节、几点到几点。
+            "morningPeriods": [dict(p) for p in self._schedule.morning_periods()],
             # 周末实际有几节：上午（按分界切日常节次）+ 下午专属节次
             "periodCount": len(self._schedule._weekend_periods()),
             "available": True,
@@ -235,7 +255,7 @@ class TimetableStore(QObject):
             self._schedule.set_weekend(split, periods, names)
         except Exception as exc:  # noqa: BLE001
             return _err(f"保存失败：{exc}")
-        self.changed.emit()
+        self._bump()
         return {"ok": True}
 
     # ---------------- 导入 / 导出 ----------------
@@ -284,7 +304,7 @@ class TimetableStore(QObject):
             result = self._schedule.import_text(
                 text, mode="replace" if mode == "replace" else "merge",
                 filename=filename)
-            self.changed.emit()
+            self._bump()
             return {"ok": True, **result}
         except Exception as exc:  # noqa: BLE001
             return _err(str(exc) or "导入失败")
@@ -296,7 +316,7 @@ class TimetableStore(QObject):
         try:
             result = self._schedule.import_file(
                 path, mode="replace" if mode == "replace" else "merge")
-            self.changed.emit()
+            self._bump()
             return {"ok": True, **result}
         except Exception as exc:  # noqa: BLE001
             return _err(str(exc) or "导入失败")
@@ -329,7 +349,7 @@ class TimetableStore(QObject):
         items = [str(c).strip() for c in raw if str(c).strip()] \
             if isinstance(raw, list) else []
         self._schedule.set_temp_adjust(date.strip(), items)
-        self.changed.emit()
+        self._bump()
         return {"ok": True}
 
     @Slot(result="QVariantMap")
@@ -337,7 +357,7 @@ class TimetableStore(QObject):
         if self._schedule is None:
             return _err("课表服务不可用")
         self._schedule.clear_temp_adjust()
-        self.changed.emit()
+        self._bump()
         return {"ok": True}
 
 

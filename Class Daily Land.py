@@ -96,6 +96,9 @@ if __name__ == '__main__':
     controller.set_main_opacity(settings.get('main_opacity', 1.0))
 
     plugin_manager.set_disabled_ids(settings.get('disabled_plugins', []))
+    # 内置功能（媒体播放 / 灾害预警）先注册，再扫 plugins/ 目录 —— 两者共用同一套
+    # PluginAPI，所以界面上分不出区别。详见 builtin/registry.py。
+    plugin_manager.register_builtins()
     plugin_manager.load_all()
 
     def open_settings():

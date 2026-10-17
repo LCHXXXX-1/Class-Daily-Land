@@ -31,6 +31,13 @@ class Services:
     on_setting_changed: Callable[[], None] | None = None
     on_theme_changed: Callable[[], None] | None = None
 
+    # 业务数据（作业 / 课表）落盘后的回调。参数是来源：
+    #   "homework" → 主窗口要重排作业列表
+    #   "schedule" → 主窗口与灵动岛都要重算「今天上什么课」
+    # 原生界面里这一步是每个对话框自己调 app.update_display() /
+    # _notify_island() 做的；QML 侧没有 app 引用，只能由宿主回填。
+    on_data_changed: Callable[[str], None] | None = None
+
     @property
     def embedded(self) -> bool:
         return self.settings is not None

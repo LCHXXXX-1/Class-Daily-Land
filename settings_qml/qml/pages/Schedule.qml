@@ -57,7 +57,7 @@ PageShell {
         // 二级入口用这种行，跟 SettingCard（一张卡一项设置）分工不同。
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
@@ -69,7 +69,7 @@ PageShell {
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
@@ -81,7 +81,19 @@ PageShell {
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
+
+            ClipItem {
+                anchors.fill: parent
+                iconName: "ic_fluent_clock_20_regular"
+                title: "周末作息"
+                onActivated: settingsWindow.openPage("pages/Weekend.qml")
+            }
+        }
+
+        Clip {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
@@ -93,7 +105,7 @@ PageShell {
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent

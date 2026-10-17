@@ -4,7 +4,12 @@ import QtQuick.Layouts
 import RinUI
 import "../components"
 
+// 插件 —— 顶层页，只放两个板块的入口（照 Win11「系统 → 屏幕/声音」的做法）。
+//
+// ★ 左侧导航不再有可展开的子项（见 Settings.qml 的说明），
+//   所以「插件管理」「插件市场」都是这一页里的入口行，点进去是右侧子页。
 PageShell {
+    id: root
     title: "插件"
 
     property var plugins: PluginStore.list()
@@ -15,45 +20,54 @@ PageShell {
 
         Text {
             typography: Typography.BodyStrong
-            text: "插件市场与依赖"
+            text: "插件"
         }
 
-        // 左侧导航只列顶层页（见 Settings.qml），子页从这一页的入口行进
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
                 iconName: "ic_fluent_puzzle_piece_20_regular"
-                title: "插件设置"
-                onActivated: settingsWindow.openPage("pages/PluginHub.qml")
+                title: "插件管理"
+                onActivated: settingsWindow.openPage("pages/PluginManage.qml")
+
+                // ★ 必须写 content:。ClipItem 的 content 是 `property alias`，
+                //   **不是 default 属性** —— 直接塞个子项进去会变成 Item 的普通
+                //   children，坐标停在 (0,0)，于是文字压在卡片外面（就是那种
+                //   「凸出来一小块」）。要进右侧槽位只能显式赋给 content。
+                content: Text {
+                    color: Theme.currentTheme.colors.textSecondaryColor
+                    typography: Typography.Caption
+                    text: root.plugins.length + " 个已装"
+                }
             }
         }
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
                 iconName: "ic_fluent_cart_20_regular"
                 title: "插件市场"
                 onActivated: settingsWindow.openPage("pages/Market.qml")
+
+                content: Text {
+                    color: Theme.currentTheme.colors.textSecondaryColor
+                    typography: Typography.Caption
+                    text: "搜索 / 安装 / 更新"
+                }
             }
         }
+    }
 
-        Clip {
-            Layout.fillWidth: true
-            Layout.minimumHeight: 64
-
-            ClipItem {
-                anchors.fill: parent
-                iconName: "ic_fluent_cube_20_regular"
-                title: "依赖包管理"
-                onActivated: settingsWindow.openPage("pages/Packages.qml")
-            }
-        }
+    ColumnLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: 8
+        spacing: 4
 
         Text {
             typography: Typography.BodyStrong
@@ -62,7 +76,7 @@ PageShell {
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
@@ -83,89 +97,11 @@ PageShell {
                          : "嵌入主程序模式下暂未提供这项设置"
             icon.name: "ic_fluent_arrow_sync_20_regular"
         }
-
-        Text {
-            typography: Typography.BodyStrong
-            text: "已安装 " + plugins.length + " 个插件"
-        }
-
-        Repeater {
-            model: plugins
-
-            delegate: Frame {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 76
-                padding: 0
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 14
-
-                    Rectangle {
-                        Layout.preferredWidth: 44
-                        Layout.preferredHeight: 44
-                        radius: 10
-                        color: Theme.currentTheme.colors.backgroundColor
-                        border.width: 1
-                        border.color: Theme.currentTheme.colors.controlBorderColor
-
-                        IconWidget {
-                            anchors.centerIn: parent
-                            icon: modelData.ok
-                                  ? "ic_fluent_puzzle_piece_20_regular"
-                                  : "ic_fluent_warning_20_regular"
-                            size: 22
-                            color: modelData.ok
-                                   ? Theme.currentTheme.colors.primaryColor
-                                   : Theme.currentTheme.colors.systemCriticalColor
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-
-                        RowLayout {
-                            spacing: 8
-                            Text {
-                                typography: Typography.BodyStrong
-                                text: modelData.name
-                                elide: Text.ElideRight
-                            }
-                            InfoBadge {
-                                visible: modelData.version.length > 0
-                                text: "v" + modelData.version
-                                severity: Severity.Info
-                                solid: false
-                            }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            color: Theme.currentTheme.colors.textSecondaryColor
-                            typography: Typography.Caption
-                            text: modelData.ok
-                                  ? (modelData.author ? modelData.author + " · " : "") + modelData.desc
-                                  : modelData.desc
-                            elide: Text.ElideRight
-                        }
-                    }
-                }
-            }
-        }
-
-        Text {
-            visible: plugins.length === 0
-            Layout.alignment: Qt.AlignHCenter
-            Layout.margins: 24
-            color: Theme.currentTheme.colors.textSecondaryColor
-            text: "plugins/ 目录里还没有插件"
-        }
     }
 
     ColumnLayout {
         Layout.fillWidth: true
+        Layout.topMargin: 8
         spacing: 4
 
         Text {

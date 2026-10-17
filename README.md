@@ -44,7 +44,15 @@ Class Daily Land 是一个基于 **PySide6** 的 Windows 桌面应用，面向�
   三档主题：跟随系统 / 浅色 / 深色。`theme.py` 提供统一色板与 QSS 生成，界面所有颜色实时取自色板，切换主题无需重启；Windows 11 下可开启设置窗口的云母（Mica）材质。
 
 - **Fluent 风格设置中心（v4.3）**
-  左侧导航栏 + 搜索框 + 分层子页的结构，页面包括：通用、外观、灵动岛、课表与提醒、作业、插件、高级、关于；课表与插件下可进二级页（课表编辑器、插件市场、依赖包）。开关、分段控件、卡片、徽章等均为自绘控件，带平滑动画。
+  左侧导航栏 + 搜索框 + 分层子页的结构，页面包括：通用、外观、灵动岛、课表与提醒、作业、插件、高级、关于；「课表与提醒」下可进二级页（课表管理、假期与调休、周末作息、值日生名单、状态测试），「插件」下可进插件管理与插件市场。开关、分段控件、卡片、徽章等均为自绘控件，带平滑动画。
+
+  「作业」「周末作息」两页与主窗口右键菜单里的原生对话框共用同一份数据（`homework.json` / `schedule.json` 的 `weekend`），改完立刻刷新主窗口与灵动岛。
+
+  **右键菜单默认跳转到设置中心**：主窗口右键里的「编辑作业 / 课表管理 / 临时调课 / 假期与调休 / 周末作息」现在直接打开本设置中心的对应页，不再各弹一个独立窗口；
+  想要回原来的原生对话框，把「设置 → 通用 → 右键菜单 → 作业 / 课表用回原生对话框」打开即可（`right_click_native_menu`）。
+
+- **内置功能（v4.4）**
+  媒体播放与灾害预警原先是插件，现已直接编进主程序（`builtin/`），启动时用 `PluginManager.register_builtins()` 注册。它们走的仍是同一套 `PluginAPI`，所以在灵动岛、副岛、下拉面板、设置页里的表现与第三方插件完全一致；数据落在 `settings/builtin/<key>/`。
 
 - **插件系统**
   动态加载 `plugins/` 目录下的插件，插件可注册灵动岛文本、主岛加长片段、灵动岛横幅、下拉面板、副岛内容、设置页，并可使用定时器、读写自身配置、获取课表状态、发送通知。插件声明的第三方依赖可由宿主从服务器自动下载安装（见 [插件市场与依赖包](#插件市场与依赖包)）。
@@ -94,8 +102,12 @@ python "Class Daily Land.py"
 ### 打包为可执行文件
 
 ```bash
-pyinstaller -F -w -i icon.ico --add-data "settings_qml;settings_qml" --collect-all RinUI "Class Daily Land.py"
+pyinstaller -F -w -i icon.ico --add-data "settings_qml;settings_qml" --collect-all RinUI --collect-submodules builtin "Class Daily Land.py"
 ```
+
+> `--collect-submodules builtin` 不能省：内置功能（媒体播放 / 灾害预警）是用
+> `importlib.import_module("builtin.xxx.main")` **按名字**加载的，PyInstaller 静态分析看不到，
+> 少了这一项打出来的 exe 会少了这两个功能（而且只在运行到注册时报错）。
 
 打包后请确保 `_internal/version.json` 或根目录下的 `version.json` 存在，以便“关于”页面正确显示版本号；“关于”页的版本号实际读取 `settings/config.json` 中的 `version` 字段。
 
@@ -175,6 +187,11 @@ class-daily-land/
 ├── settings_widgets.py    # 自绘控件库（开关/分段/卡片/徽章/导航等）
 ├── settings_rows.py       # 设置行与行控件（滑块/下拉/输入/开关）
 ├── theme.py               # 主题色板与 QSS 生成
+├── builtin/               # 内置功能（原插件，现已编进本体）
+│   ├── registry.py       # 内置功能清单
+│   ├── data.py           # 数据目录（settings/builtin/<key>/）
+│   ├── audio/            # 媒体播放：SMTC 轮询 + 主岛/副岛显示
+│   └── disaster/         # 灾害预警：地震/气象，按经纬度算横波倒计时
 ├── plugin_manager.py      # 插件加载与 PluginAPI
 ├── plugin_market.py       # 插件市场：索引同步、下载校验与安装
 ├── market_page.py         # 插件市场页面
@@ -312,6 +329,8 @@ def register(api):
 | `on_subisland_click(fn)` | 副岛点击回调 |
 | `subisland_show_weather(bool)` | 副岛是否展示天气位 |
 | `add_settings_page(title, factory, icon)` | 注册插件设置页 |
+
+注册出来的页面会出现在「设置 → 插件 → 插件管理」里：点插件名字，就在**同一个设置窗口内**打开并编辑，不再弹独立窗口。
 | `set_interval(seconds, fn)` | 创建循环定时器 |
 | `set_timeout(seconds, fn)` | 创建单次定时器 |
 | `get_data_dir()` | 获取插件数据目录 |
@@ -347,7 +366,7 @@ def register(api):
 
 ### 插件市场
 
-插件可在应用内直接搜索、下载、启用与卸载，不必手动拷贝文件夹。市场核心在 `plugin_market.py`，索引来源三选一（设置 → 高级）：
+插件可在应用内直接搜索、下载、启用与卸载，不必手动拷贝文件夹。市场核心在 `plugin_market.py`，索引来源三选一（插件 → 插件市场）：
 
 | 来源 | 说明 |
 |------|------|
@@ -355,7 +374,7 @@ def register(api):
 | `github` | GitHub 仓库 `plugins` 分支根目录的 `list.json`（raw 直链 + jsDelivr 镜像） |
 | `gitee` | Gitee 仓库 `plugins` 分支根目录的 `list.json`（raw 直链） |
 
-各来源的条目会解析成同一套内部字段，下载、校验、安装逻辑完全共用。索引同步成功后会落盘到缓存目录，离线时仍可打开已缓存列表。下载完成会校验哈希，再解压到 `plugins/<插件目录>/`，然后在“设置 → 插件”中启用。
+各来源的条目会解析成同一套内部字段，下载、校验、安装逻辑完全共用。索引同步成功后会落盘到缓存目录，离线时仍可打开已缓存列表。下载完成会校验哈希，再解压到 `plugins/<插件目录>/`，然后在“设置 → 插件 → 插件管理”中启用。
 
 ### 第三方依赖包
 
@@ -368,7 +387,7 @@ def register(api):
 
 登记表 `plugins/packages/packages.json` 记录每个包的固定版本与 `used_by`（哪些插件在用）；插件卸载时把自己从 `used_by` 摘掉，没有人再用的包才会真正删除。进度通过回调实时回传到底层的依赖包管理页面。
 
-即使没有插件声明，也可以在“设置 → 高级 → 依赖包”中手动浏览远端可用包、查看“被哪些插件使用”，自行安装或卸载。
+即使没有插件声明，也可以在“设置 → 插件 → 插件市场 → 依赖包管理”中手动浏览远端可用包、查看“被哪些插件使用”，自行安装或卸载。
 
 ---
 
@@ -404,7 +423,7 @@ A：检查设置中“显示灵动岛”是否开启；如果当前有全屏应�
 A：设置 → 外观，主题选择“深色”或“跟随系统”；Windows 11 下可同时开启云母材质。切换是实时的，不需要重启。
 
 **Q：如何添加插件？**
-A：三种方式：把插件文件夹放进 `plugins/` 目录；在“设置 → 插件”中点击“添加插件”选择 `.cbplugin` 文件；或者在“设置 → 插件 → 插件市场”里直接搜索安装。
+A：三种方式：把插件文件夹放进 `plugins/` 目录；把 `.cbplugin` 文件放进「设置 → 插件 → 插件管理 → 打开插件文件夹」指向的目录后重启；或者在“设置 → 插件 → 插件市场”里直接搜索安装。
 
 **Q：插件提示缺少第三方库怎么办？**
 A：在插件的 `plugin.json` 中加 `requires` 声明，重启程序后会自动下载安装；也可以手动打开“设置 → 高级 → 依赖包”自行安装。

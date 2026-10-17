@@ -26,6 +26,7 @@ from . import paths
 from .bridge import AppInfo, Config, Folders, Homework, ListStore, Plugins, ScheduleInfo
 from .extra import MarketStore, PackageBridge, StatusTester, TimetableStore, UpdaterBridge
 from .pluginpages import PluginPages
+from .pluginhome import PluginHost
 from .services import Services
 
 # 配置里的 theme_mode → RinUI ThemeManager 的三档（注意是 Auto，不是 System）
@@ -60,6 +61,9 @@ CONTEXT_PROPERTIES: tuple[tuple[str, str], ...] = (
     ("Updater", "updater"),
     # 插件自己注册的设置页目录。名字避开所有 QML 组件文件名。
     ("PluginPages", "plugin_pages"),
+    # 插件设置页的**内嵌**宿主（原生 QWidget → WindowContainer）。
+    # 名字同样避开所有 .qml 文件名（有 PluginPage.qml / PluginManage.qml）。
+    ("PluginHost", "plugin_host"),
 )
 
 
@@ -105,10 +109,12 @@ class SettingsApp:
         )
         self.plugins = Plugins(plugin_manager=services.plugin_manager,
                                settings=services.settings)
-        self.homework = Homework(homework=services.homework)
+        self.homework = Homework(homework=services.homework,
+                                 on_changed=services.on_data_changed)
         self.list_store = ListStore(duty=services.duty, schedule=services.schedule)
         self.schedule = ScheduleInfo(schedule=services.schedule)
-        self.timetable_store = TimetableStore(schedule=services.schedule)
+        self.timetable_store = TimetableStore(schedule=services.schedule,
+                                              on_changed=services.on_data_changed)
         self.status_tester = StatusTester(
             schedule=services.schedule, settings=services.settings,
             controller=services.controller)
@@ -118,9 +124,17 @@ class SettingsApp:
                                             plugin_manager=services.plugin_manager)
         self.updater = UpdaterBridge()
         self.paths_helper = paths.Paths()
+        # ★ 在 engine.load() 之前把「首屏」写进 Paths：
+        #   Settings.qml 的 defaultPage 绑定读它，NavigationView 的首次 push
+        #   就会直接落在目标页 —— 不需要显示之后再导航一次（那条路有竞态，
+        #   见 Settings.qml 里 bootTimer 的说明）。
+        self.paths_helper.setStartPage(page or "")
         # parent_window 传 None：RinUI 窗口此时还没 load，QWindow 尚未存在；
         # 真正要弹插件设置页时由 self.root（load 后拿到的）来当父窗口。
         self.plugin_pages = PluginPages(plugin_manager=services.plugin_manager)
+        # 内嵌宿主：点插件行时建好原生控件，插件设置页（QML）负责显示
+        self.plugin_host = PluginHost(plugin_manager=services.plugin_manager,
+                                      pages=self.plugin_pages)
 
         # 先建「不加载」的窗口，拿到引擎
         self.window = RinUI.RinUIWindow(None, shared_engine=True)
@@ -131,9 +145,9 @@ class SettingsApp:
 
         self.window.load(self.qml_path)
         self.root = self.window.root_window
-        # 插件设置页要弹原生对话框，父窗口这时才存在
-        if self.plugin_pages is not None and self.root is not None:
-            self.plugin_pages.setParentWindow(self.root)
+        # 内嵌的原生页要挂成设置窗口的附属窗（z 序 / 跟着最小化）
+        if self.plugin_host is not None and self.root is not None:
+            self.plugin_host.setOwnerWindow(self.root)
 
         # ★ 页面里也要能拿到「导航出口」。
         #
@@ -169,21 +183,36 @@ class SettingsApp:
                     bridge.shutdown()
                 except Exception:  # noqa: BLE001
                     pass
+        # 内嵌的插件页是独立原生窗口，必须跟着关，否则会在背后挂一个空窗
+        host = getattr(self, "plugin_host", None)
+        if host is not None:
+            try:
+                host.release()
+            except Exception:  # noqa: BLE001
+                pass
 
     def goto(self, page: str) -> bool:
         """按导航标签切页（含子项）。
 
         走 QML 侧的 gotoTitle()，而不是直接写 currentPage ——
         后者只改属性，NavigationView 不会真的 push 页面（加载页面的是 safePush）。
+
+        ★ 优先用 gotoTitleWhenReady：窗口刚 show 的那一拍导航栈还没建好，
+        直接 push 会出现「左侧高亮变了、右侧还是首页」（见 QML 里的说明）。
         """
         try:
+            fn = getattr(self.root, "gotoTitleWhenReady", None)
+            if callable(fn):
+                return bool(fn(page))
             return bool(self.root.gotoTitle(page))
         except (AttributeError, TypeError):
             from PySide6.QtCore import Q_ARG, QMetaObject, Qt  # noqa: PLC0415
 
-            QMetaObject.invokeMethod(
-                self.root, "gotoTitle", Qt.ConnectionType.DirectConnection, Q_ARG("QVariant", page)
-            )
+            for name in ("gotoTitleWhenReady", "gotoTitle"):
+                QMetaObject.invokeMethod(
+                    self.root, name, Qt.ConnectionType.DirectConnection,
+                    Q_ARG("QVariant", page),
+                )
             return True
 
     def show(self, width: int, height: int, modal: bool = False) -> None:
@@ -193,9 +222,42 @@ class SettingsApp:
             self.root.setModality(Qt.ApplicationModal)
         self.root.resize(width, height)
         self.root.show()
-        if self.start_page:
-            # 导航项是加载后才建好的，切页推迟一拍
-            QTimer.singleShot(0, lambda: self.goto(self.start_page))
+        # 首屏那次 push 是在窗口可见之前发起的（NavigationView 的
+        # Component.onCompleted），转场动画不会推进 —— busy / pushInProgress
+        # 会双双卡住，之后点导航就「只有高亮动、内容不动」。
+        # 显示之后收一次尾，再装横向转场（见 QML 的 unstickNavigation）。
+        QTimer.singleShot(120, self._unstick_navigation)
+        # 起始页由 Settings.qml 的 defaultPage 在**首次 push** 时就落好，
+        # 这里不再补一次导航（显示后再 safePush 会在栈未就绪时静默失败）。
+        if self.start_page and not self._on_start_page():
+            # 兜底：defaultPage 没生效（比如标题对不上）就晚一点再切一次
+            QTimer.singleShot(800, lambda: self.goto(self.start_page))
+
+    def _unstick_navigation(self) -> None:
+        try:
+            self.root.unstickNavigation()
+        except (AttributeError, TypeError):
+            try:
+                from PySide6.QtCore import QMetaObject, Qt  # noqa: PLC0415
+
+                QMetaObject.invokeMethod(
+                    self.root, "unstickNavigation",
+                    Qt.ConnectionType.DirectConnection)
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _on_start_page(self) -> bool:
+        """当前页是不是就是 start_page（用页面文件名粗判，够用且不依赖 QML 内部）。"""
+        try:
+            target = str(self.start_page or "").strip()
+            if not target:
+                return True
+            current = str(self.root.property("navCurrentPage") or "")
+            return current.endswith("/" + target + ".qml") or target in current
+        except Exception:  # noqa: BLE001
+            return False
 
 
 def main(

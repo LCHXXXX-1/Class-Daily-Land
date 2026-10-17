@@ -22,6 +22,7 @@ from plugin_manager import PluginManager  # noqa: E402
 from settings_manager import SettingsManager  # noqa: E402
 
 from app.pluginpages import PluginPages  # noqa: E402
+from app.pluginhome import PluginHost  # noqa: E402
 
 
 def main() -> int:
@@ -31,7 +32,8 @@ def main() -> int:
     py_paths.PLUGINS_DIR = plugins_dir
     pm = PluginManager(plugins_dir, settings=SettingsManager(py_paths.CONFIG_DIR))
 
-    print("[1] load_all()")
+    print("[1] register_builtins() + load_all()")
+    pm.register_builtins()
     pm.load_all()
     for name, ok, message in getattr(pm, "loaded", []):
         print(f"    {'OK  ' if ok else 'FAIL'} {name} {'' if ok else message}")
@@ -48,32 +50,30 @@ def main() -> int:
     rows = bridge.list()
     print(f"    count()={bridge.count()}")
     for r in rows:
-        print(f"    - [{r['index']}] {r['title']} ({r['plugin']}) "
+        print(f"    - {r['title']} ({r['plugin']}) "
               f"icon={r['icon']} hasPage={r['hasPage']} "
               f"children={len(r['children'])}")
 
     ok = True
     if bridge.count() == 0:
         print("\n✗ 桥列出 0 条 —— QML 列表会是空的，点名字也不会有反应")
+        print("   （plugins/ 目录现在空着是正常的：两个功能已内置，注册后应该出现在列表里）")
         ok = False
 
-    print("[4] 点击名字 → open() 打开原生设置页")
+    print("[4] 点击名字 → PluginHost.prepare() 建出可内嵌的原生页")
+    host = PluginHost(plugin_manager=pm, pages=bridge)
     for r in rows:
         if not r["hasPage"]:
             continue
-        # 不真弹模态（会阻塞），只验证 factory 能造出 QWidget
-        entries = list(pm.get_settings_pages())
-        factory = entries[r["index"]].get("factory")
-        try:
-            w = factory(None)
-        except TypeError:
-            w = factory()
-        print(f"    factory({r['title']}) -> {type(w).__name__}")
-        if w is None:
-            print("    ✗ factory 返回 None")
+        good = host.prepare(r["plugin"])
+        widget = host._host  # noqa: SLF001 - 探针看内部件
+        size = widget.size() if widget is not None else None
+        print(f"    prepare({r['plugin']}) -> {good} "
+              f"title={host.title!r} widget={type(widget).__name__} "
+              f"size={size.width()}x{size.height() if size else 0}")
+        if not good or widget is None:
             ok = False
-        else:
-            w.deleteLater()
+        host.release()
 
     print("\n" + ("全部通过" if ok else "有问题，见上面 ✗"))
     QTimer.singleShot(0, app.quit)

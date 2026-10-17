@@ -118,4 +118,25 @@ PageShell {
             icon.name: "ic_fluent_shield_20_regular"
         }
     }
+
+    ColumnLayout {
+        Layout.fillWidth: true
+        spacing: 4
+
+        Text {
+            typography: Typography.BodyStrong
+            text: "右键菜单"
+        }
+
+        // 默认走本设置中心的对应页；打开它就退回老的原生 Qt 对话框。
+        // 两项数据本来就是同一份（homework.json / schedule.json），
+        // 这里只是选「用哪套界面改」，不会分成两份。
+        SwitchSetting {
+            settingKey: "right_click_native_menu"
+            title: "作业 / 课表用回原生对话框"
+            description: "关着时右键「编辑作业 / 课表管理 / 假期 / 周末」直接打开本设置页；"
+                         + "打开则恢复原来的独立对话框"
+            icon.name: "ic_fluent_cursor_click_20_regular"
+        }
+    }
 }

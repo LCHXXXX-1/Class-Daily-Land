@@ -39,6 +39,21 @@ PLUGINS_DIR = DATA_ROOT / "plugins"
 class Paths(QObject):
     """给 QML 用的路径助手。所有返回值都是绝对 file:// URL 或本地路径字符串。"""
 
+    # 宿主要求「打开设置就落在某一页」时填这里（导航标题，如「灵动岛」）。
+    # 必须**在 QML 加载前**写进去：Settings.qml 的 defaultPage 绑定要读它，
+    # 而 defaultPage 在那个时机决定了 NavigationView 的**首次 push**。
+    # 为什么不用「显示后再 safePush」：那条路在 stackView 还没有 currentItem 时
+    # replace(null) 会失败，表现为「左侧高亮跳过去了、右侧还停在首页」。
+    _start_page: str = ""
+
+    @Slot(str)
+    def setStartPage(self, title: str) -> None:
+        type(self)._start_page = str(title or "")
+
+    @Slot(result=str)
+    def startPage(self) -> str:
+        return type(self)._start_page
+
     @Slot(str, result=str)
     def qml(self, name: str) -> str:
         """qml("pages/General.qml") → 绝对 file:// URL（NavigationView 要的就是这个）。"""

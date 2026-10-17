@@ -18,7 +18,7 @@ PageShell {
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
@@ -40,7 +40,7 @@ PageShell {
 
         Clip {
             Layout.fillWidth: true
-            Layout.minimumHeight: 64
+            Layout.preferredHeight: 64
 
             ClipItem {
                 anchors.fill: parent
@@ -50,7 +50,11 @@ PageShell {
             }
         }
 
-        Frame {
+        // ★ 这一行原来用的是 RinUI 的 Frame，与上下两个 Clip 行不是同一个控件：
+        //   Frame 自带 12px 内边距、且背景矩形的圆角/边框与 Clip 的 Frame 背景不同，
+        //   实际渲染出来会比同组卡片左右各宽出几像素 —— 就是"凸出来一小块"的那种观感。
+        //   现在统一用 Clip，内边距与 ClipItem 一样（左 22 右 16），三行完全对齐。
+        Clip {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
             padding: 0

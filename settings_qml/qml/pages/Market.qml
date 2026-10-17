@@ -366,6 +366,31 @@ SubPage {
         }
     }
 
+    // 依赖包管理挂在「插件市场」下面：它是市场的后勤，不该单独占一个导航项
+    // （见 Settings.qml「左侧只放顶层页」的说明）。
+    ColumnLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: 12
+        spacing: 4
+
+        Text {
+            typography: Typography.BodyStrong
+            text: "相关设置"
+        }
+
+        Clip {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 64
+
+            ClipItem {
+                anchors.fill: parent
+                iconName: "ic_fluent_cube_20_regular"
+                title: "依赖包管理"
+                onActivated: settingsWindow.openPage("pages/Packages.qml")
+            }
+        }
+    }
+
     Connections {
         target: MarketStore
 

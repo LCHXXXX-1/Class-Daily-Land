@@ -110,6 +110,10 @@ FIELDS: tuple[Field, ...] = (
     Field("packages_source", "gitee", "str"),
     Field("packages_base_url", "", "str"),
     Field("plugins_auto_check_update", True),
+    # ---------------------------------------------------------- 右键菜单
+    # False（默认）= 主窗口右键里的「作业 / 课表 / 假期 / 周末」跳进本设置中心；
+    # True          = 退回原来的原生 Qt 对话框（给习惯旧界面的人留的后路）。
+    Field("right_click_native_menu", False),
     # ---------------------------------------------------------- 高级
     Field("disabled_plugins", [], "list"),
 )

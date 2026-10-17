@@ -451,6 +451,11 @@ class Plugins(QObject):
             loaded[name] = (bool(ok), str(message or ""))
 
         result: list[dict[str, Any]] = []
+        # 内置功能（原插件、现已编进主程序）排在最前面，带 builtin=True
+        try:
+            result.extend(self._pm.builtin_list() or [])
+        except Exception:  # noqa: BLE001 - 老版本没有这个方法就当没有内置功能
+            pass
         root_path = paths.Path(root)
         if not root_path.is_dir():
             return []
@@ -470,7 +475,11 @@ class Plugins(QObject):
                 message = "未加载（可能缺少 plugin.json 或入口文件）"
             result.append({
                 "id": folder.name,
-                "name": str((meta.get("name") if meta else None) or folder.name),
+                # 优先 display_name（中文名），没有才退回 name —— 和 _list_demo 一致，
+                # 否则插件管理页会显示成 "disaster-alert" 这种目录名。
+                "name": str((meta.get("display_name") if meta else None)
+                            or (meta.get("name") if meta else None)
+                            or folder.name),
                 "version": str(meta.get("version") or "") if meta else "",
                 "author": str((meta.get("author_name") or meta.get("author") or "")) if meta else "",
                 "desc": str(meta.get("description") or "") if meta else "",
@@ -487,6 +496,10 @@ class Plugins(QObject):
         result: list[dict[str, Any]] = []
         for folder in sorted(paths.PLUGINS_DIR.iterdir()):
             if not folder.is_dir():
+                continue
+            # packages 是第三方依赖的落盘目录，不是插件本体
+            # （_list_managed 里也跳过它，两边必须一致）
+            if folder.name == "packages":
                 continue
             meta = read_json(folder / "plugin.json", None)
             if not isinstance(meta, dict):
@@ -511,13 +524,19 @@ class Plugins(QObject):
 
 
 class Homework(QObject):
-    """作业条目：演示模式 JSON 持久化；嵌入模式委托 HomeworkManager。"""
+    """作业条目：演示模式 JSON 持久化；嵌入模式委托 HomeworkManager。
+
+    形状对齐原生 `menu.HomeworkEditor`：一条作业 = 科目 + 提交日期 + 内容，
+    列表按科目分组，支持 添加 / 修改 / 删除 / 整组清除。
+    """
 
     itemsChanged = Signal()
 
-    def __init__(self, parent: QObject | None = None, homework: Any = None) -> None:
+    def __init__(self, parent: QObject | None = None, homework: Any = None,
+                 on_changed: Any = None) -> None:
         super().__init__(parent)
         self._homework = homework
+        self._on_changed = on_changed      # 宿主回调：("homework") → 主窗口重排
         if homework is None:
             raw = read_json(paths.HOMEWORK_FILE, [])
             self._items: list[dict[str, Any]] = raw if isinstance(raw, list) else []
@@ -536,21 +555,47 @@ class Homework(QObject):
             return False
         if self._homework is not None:
             # 演示模式把空科目归一成「未分类」；这里同样处理，页面体验一致
-            return bool(self._homework.add_homework(subject, content, date.strip()))
+            ok = bool(self._homework.add_homework(subject, content, date.strip()))
+            if ok:
+                self._after_change()
+            return ok
         self._items.append({"subject": subject, "content": content, "date": date.strip()})
+        self._commit()
+        return True
+
+    @Slot(int, str, str, str, result=bool)
+    def update(self, index: int, subject: str, content: str, date: str) -> bool:
+        """修改一条（原生「修改作业」按钮）。"""
+        subject = subject.strip() or "未分类"
+        content = content.strip()
+        if not content:
+            return False
+        if self._homework is not None:
+            ok = bool(self._homework.update_homework(index, subject, content,
+                                                     date.strip()))
+            if ok:
+                self._after_change()
+            return ok
+        if not (0 <= index < len(self._items)):
+            return False
+        self._items[index] = {"subject": subject, "content": content,
+                              "date": date.strip()}
         self._commit()
         return True
 
     @Slot(int, result=bool)
     def remove(self, index: int) -> bool:
         if self._homework is not None:
-            return bool(self._homework.remove_homework(index))
+            ok = bool(self._homework.remove_homework(index))
+            if ok:
+                self._after_change()
+            return ok
         if not (0 <= index < len(self._items)):
             return False
         self._items.pop(index)
         self._commit()
         return True
-    #
+
     @Slot(str, result=int)
     def clearSubject(self, subject: str) -> int:
         name = subject.strip() or "未分类"
@@ -560,6 +605,8 @@ class Homework(QObject):
             # 倒序删，避免删除过程中索引前移（与 web_settings 的做法一致）
             for index in sorted(targets, reverse=True):
                 self._homework.remove_homework(index)
+            if targets:
+                self._after_change()
             return len(targets)
         before = len(self._items)
         self._items = [i for i in self._items if (i.get("subject") or "未分类") != name]
@@ -567,6 +614,19 @@ class Homework(QObject):
         if removed:
             self._commit()
         return removed
+
+    def _after_change(self) -> None:
+        """嵌入模式：管理器自己已经存过盘，这里只负责让主界面跟上。
+
+        原生 HomeworkEditor 每次增删改都调 `self.app.update_display()`；
+        少了这一步，设置里加完作业，主窗口还写着「暂无作业」。
+        """
+        self.itemsChanged.emit()
+        if self._on_changed is not None:
+            try:
+                self._on_changed("homework")
+            except Exception:  # noqa: BLE001 - 宿主刷新失败不该让保存报错
+                pass
 
     def _commit(self) -> None:
         write_json_atomic(paths.HOMEWORK_FILE, self._items)

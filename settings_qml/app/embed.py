@@ -30,7 +30,7 @@ from . import paths
 from .services import Services
 from .window import SettingsApp
 
-WINDOW_SIZE = (1180, 800)
+WINDOW_SIZE = (1232, 762)
 
 
 def _reconfigure_stdio() -> None:
@@ -89,6 +89,36 @@ def _make_callbacks(services: Services) -> None:
 
     services.on_theme_changed = apply_theme
     services.on_setting_changed = apply_settings
+
+    def data_changed(what: str) -> None:
+        """作业 / 课表落盘后刷新主界面。
+
+        为什么必须有：原生「编辑作业」「周末作息」两个对话框在自己里头
+        调 `app.update_display()` / `_notify_island()`，改完主窗口立刻变。
+        QML 设置中心拿不到 app 引用，不补这一手就会出现
+        「在设置里加了作业，主窗口还写着暂无作业」—— 看着像功能坏了。
+        """
+        if what == "homework":
+            update = getattr(app, "update_display", None)
+            if callable(update):
+                try:
+                    update()
+                except Exception:  # noqa: BLE001
+                    pass
+        # 课表 / 周末作息改了，主窗口和灵动岛都得重算（原生是 _notify_island）
+        notify = getattr(app, "_notify_island", None)
+        if callable(notify):
+            try:
+                notify()
+            except Exception:  # noqa: BLE001
+                pass
+        elif controller is not None:
+            try:
+                controller.notify_island_dirty()
+            except Exception:  # noqa: BLE001
+                pass
+
+    services.on_data_changed = data_changed
 
 
 def create_settings_dialog(

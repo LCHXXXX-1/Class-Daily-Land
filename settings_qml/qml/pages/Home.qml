@@ -46,7 +46,7 @@ PageShell {
 
             delegate: Clip {
                 Layout.fillWidth: true
-                Layout.minimumHeight: 64
+                Layout.preferredHeight: 64
 
                 ClipItem {
                     anchors.fill: parent

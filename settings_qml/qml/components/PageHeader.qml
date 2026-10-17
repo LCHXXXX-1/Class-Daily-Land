@@ -29,6 +29,22 @@ Item {
     /// 可选的一句话说明，显示在面包屑下面。
     property string description: ""
 
+    /// 左右留白：必须与 PageShell 的 horizontalPadding 一致，
+    /// 否则面包屑会贴在导航栏边上，而下面的卡片却缩进 28px —— 对不齐很难看。
+    readonly property real gutter: 28
+
+    /// ★ 面包屑要跟内容列**同一条竖线**。
+    ///
+    ///   RinUI 的 FluentPage 是这么算内容列的：
+    ///       width = min(pageWidth - horizontalPadding*2, wrapperWidth)
+    ///       x     = (pageWidth - 那个宽度) / 2      ← 居中
+    ///   而 contentHeader 被放进一个普通 Row 里，位置由 Row 决定、宽度也由 Row 决定，
+    ///   它自己写 x 是没用的。所以这里把同一套算式复刻一遍，再拿算出来的
+    ///   columnX / columnWidth 去摆内部两行 —— 数字对上了，视觉才对齐。
+    ///   （PageShell 里 horizontalPadding = 28、wrapperWidth = 900，改那边要同步这里。）
+    readonly property real columnWidth: Math.min(width - gutter * 2, 900)
+    readonly property real columnX: Math.max(0, (width - columnWidth) / 2)
+
     readonly property int appearDuration: 340
     readonly property int hoverDuration: 180
 
@@ -49,7 +65,11 @@ Item {
 
     RowLayout {
         id: row
-        width: parent.width
+        // RinUI 把 contentHeader 塞进一个普通 Row，位置由它决定（实测已经在
+        // 内容列附近了），这里只补右侧留白，不再自己加左边距 —— 加了就比
+        // 下面的卡片多缩进一截，看着像"标题没对齐"。
+        x: 0
+        width: parent.width - root.gutter
         spacing: 6
 
         //面包屑各级之间不要被Layout 拉散：整行靠左，文字紧挨着分隔符。
@@ -212,21 +232,23 @@ Item {
         color: Theme.currentTheme.colors.textColorSecondaryColor
         anchors.top: row.bottom
         anchors.topMargin: 4
-        width: parent.width
+        x: 0
+        width: parent.width - root.gutter
         wrapMode: Text.WordWrap
     }
 
-    // ---- 进场：淡入 + 轻微上移 ----
+    // ---- 进场：只做轻微上移，**不淡入** ----
+    //  用户明确不要淡化：整页已经是"旧页移出去、新页移进来"，再叠一个
+    //  面包屑淡入会显得糊。所以这里只动 transform，opacity 恒为 1。
     //  初始位移放在 Component.onCompleted 里设：动画只是锦上添花，
     //  绝不能决定「内容看不看得见」。
     Component.onCompleted: {
         var win = root.Window.window
         if (win && win.visible) {
             appearShift.y = 8
-            opacity = 0
             appear.start()
         }
-        // 兜底无条件挂上：不管动不动画，超时后都把位移与透明度收回
+        // 兜底：动画不推进时把位移收回
         appearGuard.restart()
     }
 

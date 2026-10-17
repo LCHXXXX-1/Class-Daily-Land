@@ -335,22 +335,51 @@ class ClassBoardApp(QWidget):
         self.setWindowOpacity(self._target_opacity)
 
     # ================= 右键菜单 =================
+    #
+    # 这几项（作业 / 课表 / 假期 / 周末）过去各自弹一个原生 Qt 对话框，
+    # 现在默认直接打开设置中心里对应的那一页 —— 数据本来就是同一份
+    # （homework.json / schedule.json），没理由维护两套编辑界面。
+    #
+    # 「设置 → 通用 → 右键菜单」里的开关可以把它们退回原生对话框
+    # （right_click_native_menu），留给习惯旧界面的人。
+    _NATIVE_ON_RIGHT_CLICK_KEY = "right_click_native_menu"
+
+    def _use_native_dialogs(self) -> bool:
+        return bool(self.settings.get(self._NATIVE_ON_RIGHT_CLICK_KEY, False))
+
+    def _open_settings_page(self, title: str) -> None:
+        """打开设置中心并直达某一页（标题见 Settings.qml 的 pageTable）。"""
+        self.open_settings(start_page=title)
+
     def _show_menu(self, pos):
+        native = self._use_native_dialogs()
         m = QMenu(self)
         m.addAction("上一位值日生", self.previous_duty)
         m.addAction("下一位值日生", self.next_duty)
         m.addSeparator()
         m.addAction("出勤人数", self.modify_attendance)
         m.addSeparator()
-        m.addAction("编辑作业", self.edit_homework)
+        m.addAction("编辑作业",
+                    self.edit_homework if native
+                    else lambda: self._open_settings_page("作业"))
         m.addSeparator()
-        m.addAction("课表管理", self.manage_timetables)
-        m.addAction("临时调课", self.temp_adjust)
+        m.addAction("课表管理",
+                    self.manage_timetables if native
+                    else lambda: self._open_settings_page("课表管理"))
+        m.addAction("临时调课",
+                    self.temp_adjust if native
+                    else lambda: self._open_settings_page("课表管理"))
         m.addSeparator()
-        m.addAction("假期与调休", self.open_holidays)
-        m.addAction("周末作息", self.open_weekend)
+        m.addAction("假期与调休",
+                    self.open_holidays if native
+                    else lambda: self._open_settings_page("假期与调休"))
+        m.addAction("周末作息",
+                    self.open_weekend if native
+                    else lambda: self._open_settings_page("周末作息"))
         m.addSeparator()
-        m.addAction("设置", self.open_settings)
+        # 用 lambda 包一层：QAction.triggered 带一个 bool 参数，
+        # 直连 open_settings(start_page=None) 会把 False 当成页码传进去。
+        m.addAction("设置", lambda: self.open_settings())
         m.addSeparator()
         m.addAction("随机点名", self.open_randoms)
         m.addSeparator()
@@ -401,7 +430,8 @@ class ClassBoardApp(QWidget):
         dlg.exec()
         self._notify_island()
 
-    def open_settings(self):
+    def open_settings(self, start_page=None):
+        """打开设置中心。start_page 是导航标题（如「周末作息」），给了就直达那一页。"""
         # 设置中心：项目内置的 QML + RinUI 界面为主，起不来才回退原生设置窗。
         # 单例：已打开则激活已有窗口，避免从托盘/右键菜单重复打开无数个
         existing = getattr(self, "_settings_dlg", None)
@@ -424,13 +454,13 @@ class ClassBoardApp(QWidget):
                 morph_rect = island.frameGeometry()
         except Exception:
             morph_rect = None
-        dlg = self._make_settings_dialog(morph_rect)
+        dlg = self._make_settings_dialog(morph_rect, start_page)
         self._settings_dlg = dlg
         dlg.exec()
         self._settings_dlg = None
         dlg.deleteLater()
 
-    def _make_settings_dialog(self, morph_rect=None):
+    def _make_settings_dialog(self, morph_rect=None, start_page=None):
         """挑一个能跑的设置中心。
 
         回退链（任何一层都不允许白屏）：
@@ -453,6 +483,7 @@ class ClassBoardApp(QWidget):
                     plugin_manager=self.plugin_manager,
                     controller=self.controller,
                     app=self,
+                    start_page=start_page,
                 )
                 if qml_dlg is not None:
                     return qml_dlg

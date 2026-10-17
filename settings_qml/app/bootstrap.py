@@ -33,7 +33,7 @@ _MODULE_NAMES = ("settings_manager", "schedule", "StudentOnDuty", "homework",
 
 
 def find_py_root(explicit: str | None = None) -> Path | None:
-    """按「显式参数 → 环境变量 → 同级目录」找主程序项目。"""
+    """按「显式参数 → 环境变量 → 同级目录 → 上一级」找主程序项目。"""
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit))
@@ -41,6 +41,10 @@ def find_py_root(explicit: str | None = None) -> Path | None:
     if env:
         candidates.append(Path(env))
     candidates.append(paths.APP_ROOT.parent / "ClassDailyLand-Py")
+    # ★ 本项目现在是**随主程序一起发布**的（settings_qml/ 就在 Py 项目根下），
+    #   这时主程序就是 APP_ROOT 的上一级，没有同名子目录。
+    #   少了这一条，自检的「完整版检查」会一直报「没找到 ClassDailyLand-Py」。
+    candidates.append(paths.APP_ROOT.parent)
     for root in candidates:
         if (root / "settings_manager.py").is_file():
             return root
@@ -91,10 +95,10 @@ def bootstrap_services(py_root: str | None = None) -> Services | None:
     #   不执行 register() → settings_pages 恒为空 → 插件管理页列不出任何插件，
     #   点名字也没反应（而且**零报错**：Qt 动画一个不存在的属性也是静默的）。
     #
-    #   跑插件代码的风险（第三方插件可能有网络/子进程/异常）由 load_all 自己的
-    #   try/except 逐个兜住 —— 它本来就在主程序启动时对每个插件做同样的事。
-    #   这里还把执行结果打出来，方便独立运行时排查「插件为什么没注册」。
+    #   ★ 内置功能（builtin/，原媒体播放与灾害预警插件）也要在这里注册：
+    #   它们不在 plugins/ 目录里，光扫目录是扫不到的。
     try:
+        pm.register_builtins()
         pm.load_all()
         for name, ok, message in getattr(pm, "loaded", []):
             if not ok:

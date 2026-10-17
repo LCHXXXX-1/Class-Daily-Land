@@ -44,6 +44,9 @@ DEFAULTS = {
     # 源码运行保护：检测到未打包的主入口 py 时不再自动更新，弹窗提醒备份
     "block_update_on_source": True,
 
+    # 右键菜单：True = 用回原生 Qt 对话框；False = 打开新的 QML 设置中心对应页
+    "right_click_native_menu": False,
+
     # 插件市场
     "disabled_plugins": [],        # 被禁用的插件目录名列表
     "market_source": "official",     # 插件市场索引来源：official / github / gitee

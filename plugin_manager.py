@@ -263,6 +263,8 @@ class PluginManager:
         self.loaded = []
         self.settings_pages = []
         self.disabled_ids = set()      # 被禁用的插件目录名（插件市场维护）
+        # 内置功能（原插件，现已编进主程序）：key -> 登记信息
+        self.builtin_ids = {}
 
         self.subisland_length = None
         self.subisland_weather = True
@@ -280,11 +282,85 @@ class PluginManager:
         return None
 
     # ---------- 载入 ----------
+    def register_builtins(self):
+        """注册编进主程序的内置功能（媒体播放 / 灾害预警）。
+
+        它们原本是 `plugins/` 里的插件，现在直接算程序的一部分 —— 但注册方式
+        完全不动：仍然走 `PluginAPI`，于是岛文本、加长片段、副岛、面板、设置页
+        在界面层看来与第三方插件一模一样，不需要任何 if 分支。
+
+        调用时机：`load_all()` **之前**。这样注册进去的 on_load / on_start
+        会和插件的一起在 load_all 末尾触发。
+        """
+        try:
+            from builtin.registry import BUILTINS  # noqa: PLC0415 - 避免导入环
+        except Exception as e:  # noqa: BLE001
+            self.log('builtin', f'内置功能清单导入失败: {e}')
+            return
+        for item in BUILTINS:
+            self.register_builtin(item)
+
+    def register_builtin(self, item):
+        """注册单个内置功能。item 见 builtin/registry.py。"""
+        key = str(item.get("key") or "").strip()
+        module_path = str(item.get("module") or "").strip()
+        if not key or not module_path:
+            return False
+        try:
+            import importlib
+
+            module = importlib.import_module(module_path)
+        except Exception as e:  # noqa: BLE001
+            self.log(key, f'内置功能导入失败: {e}')
+            return False
+
+        try:
+            from builtin.data import builtin_dir  # noqa: PLC0415
+
+            data_dir = builtin_dir(key)
+        except Exception:  # noqa: BLE001
+            data_dir = os.path.join(self.plugins_dir, key)
+
+        api = PluginAPI(self, key, data_dir)
+        try:
+            module.register(api)
+        except Exception as e:  # noqa: BLE001
+            traceback.print_exc()
+            self.log(key, f'内置功能注册失败: {e}')
+            return False
+
+        self.builtin_ids[key] = dict(item)
+        self.loaded.append((key, True, '内置'))
+        return True
+
+    def builtin_list(self):
+        """给「插件管理」页用的内置功能列表（字段形状与插件行一致）。"""
+        rows = []
+        for key, item in self.builtin_ids.items():
+            rows.append({
+                "id": key,
+                "name": str(item.get("name") or key),
+                "version": "",
+                "author": "",
+                "desc": str(item.get("desc") or ""),
+                "ok": True,
+                "enabled": True,
+                "loaded": True,
+                "failure": "",
+                "builtin": True,
+            })
+        return rows
+
     def load_all(self):
         if not os.path.isdir(self.plugins_dir):
             return
         self._install_packages()          # 先安装 .cblplugin 包，再统一扫描目录
         for name in sorted(os.listdir(self.plugins_dir)):
+            # plugins/packages/ 是第三方依赖的落盘目录（见 plugin_deps），
+            # 不是插件本体 —— 不跳过的话每次启动都会多一条
+            # 「插件 packages 加载失败：入口不存在」，插件管理页也会把它当插件列出来。
+            if name == 'packages':
+                continue
             plugin_dir = os.path.join(self.plugins_dir, name)
             if os.path.isdir(plugin_dir):
                 if name in self.disabled_ids:
