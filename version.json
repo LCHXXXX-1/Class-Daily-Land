@@ -1,7 +1,7 @@
 {
-  "version": "4.3",
-  "data": "1.修复已知问题\n2.优化使用体验",
-  "download_url": "https://gitee.com/lchxxxx/class-daily-land/releases/download/Version/Class-Daily-Land-4.3.zip",
+  "version": "4.3.1",
+  "data": "1.新增NET架构程序(测试版)安装入口(位于关于二级界面)",
+  "download_url": "https://gitee.com/lchxxxx/class-daily-land/releases/download/Version/Class-Daily-Land-4.3.1.zip",
   "force_update": false,
 
   "beta_enabled": true,
