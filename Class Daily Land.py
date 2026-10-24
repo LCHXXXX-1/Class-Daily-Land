@@ -2,23 +2,28 @@ import os
 import sys
 import shutil
 
+# 保证从任意工作目录启动时，都能把 Core / UI / Plugins / Utils 当成顶层包导入。
+base_dir = os.path.dirname(os.path.abspath(__file__))
+if base_dir not in sys.path:
+    sys.path.insert(0, base_dir)
+
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt
 
-from paths import CONFIG_DIR, PLUGINS_DIR, ensure_dirs
-from utils import set_window_icon
-from ui_common import install_touch_scrolling
-import theme
-from gui import ClassBoardApp
-from schedule import ScheduleManager
-from dynamic_island import DynamicIsland
-from sub_island import SubIsland
-from settings_manager import SettingsManager
-from plugin_manager import PluginManager
-from controller import AppController
-from tray_icon import AppTray
-from single_instance import acquire_single_instance_lock
-import agreement
+from Core.paths import CONFIG_DIR, PLUGINS_DIR, ICON_PATH, ensure_dirs
+from Utils.utils import app_icon, set_window_icon
+from UI.ui_common import install_touch_scrolling
+from UI import theme
+from UI.gui import ClassBoardApp
+from Core.schedule import ScheduleManager
+from UI.dynamic_island import DynamicIsland
+from UI.sub_island import SubIsland
+from UI.Settings.settings_manager import SettingsManager
+from Plugins.plugin_manager import PluginManager
+from Core.controller import AppController
+from UI.tray_icon import AppTray
+from Core.single_instance import acquire_single_instance_lock
+from UI import agreement
 
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 
@@ -41,6 +46,21 @@ if __name__ == '__main__':
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     app = QApplication(sys.argv)
+    # 兜底：显式设置 Windows 应用 ID，避免任务栏 / 托盘未正确关联应用图标。
+    import ctypes
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "ClassDailyLand.App")
+    except Exception:
+        pass
+
+    # 临时诊断：确认打包后 icon.ico 是否真的进了产物。
+    # 用控制台模式（去掉 -w）打包后可直接看到输出，排查完可删除这几行。
+    print("sys._MEIPASS:", getattr(sys, '_MEIPASS', ''))
+    print("ICON_PATH:", ICON_PATH)
+    print("ICON EXISTS:", os.path.exists(ICON_PATH))
+    print("APP ICON SIZES:", app_icon().availableSizes())
+
     app.setQuitOnLastWindowClosed(False)
     set_window_icon(app)
 
@@ -96,9 +116,6 @@ if __name__ == '__main__':
     controller.set_main_opacity(settings.get('main_opacity', 1.0))
 
     plugin_manager.set_disabled_ids(settings.get('disabled_plugins', []))
-    # 内置功能（媒体播放 / 灾害预警）先注册，再扫 plugins/ 目录 —— 两者共用同一套
-    # PluginAPI，所以界面上分不出区别。详见 builtin/registry.py。
-    plugin_manager.register_builtins()
     plugin_manager.load_all()
 
     def open_settings():
