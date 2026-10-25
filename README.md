@@ -2,7 +2,7 @@
 
 > 一个面向教室大屏 / 班级一体机的 Windows 桌面班级日常管理工具：主面板、灵动岛、副岛、课表提醒、值日与作业管理，以及可扩展的插件生态。
 
-当前版本：**4.3** · 运行平台：**Windows 10 / 11** · UI 框架：**PySide6（Qt 6）**
+当前版本：**4.3** · 运行平台：**Windows 10 / 11** · UI 框架：**PySide6（Qt 6）**Class Daily Land 2现已上线！欢迎前往https://github.com/LCHXXXX-1/Class-Daily-Land-2**
 
 ---
 
